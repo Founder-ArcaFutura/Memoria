@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
+            requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Validate OpenAPI schema
+        run: python scripts/generate_openapi.py --check
+      - name: Lint with Ruff
+        run: ruff check .
+      - name: Check formatting with Black
+        run: black --check .
+      - name: Validate bootstrap wizard (non-interactive)
+        run: |
+          BOOTSTRAP_CONFIG=$(mktemp)
+          DB_PATH="$RUNNER_TEMP/memoria-bootstrap.db"
+          cat <<EOF > "$BOOTSTRAP_CONFIG"
+          {
+            "env": {
+              "MEMORIA_API_KEY": "ci-bootstrap-key"
+            },
+            "database": {
+              "backend": "sqlite",
+              "path": "${DB_PATH}"
+            }
+          }
+          EOF
+          python -m memoria.cli bootstrap \
+            --non-interactive \
+            --force \
+            --env-file "$RUNNER_TEMP/memoria-bootstrap.env" \
+            --config "$RUNNER_TEMP/memoria-bootstrap.json" \
+            --config-json "$BOOTSTRAP_CONFIG"
+      - name: Run release command checks
+        run: python scripts/ci/run_release_command_checks.py
+      - name: Run tests
+        run: pytest
+      - name: Docker compose smoke test
+        run: python scripts/run_local.py smoke
+      - name: Detect policy changes
+        if: github.event_name == 'pull_request'
+        id: policy_changes
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^memoria/policy/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run policy dry-run simulation
+        if: github.event_name == 'pull_request' && steps.policy_changes.outputs.changed == 'true'
+        run: python scripts/ci/run_policy_dry_runs.py
+      - name: Upload policy dry-run artifacts
+        if: github.event_name == 'pull_request' && steps.policy_changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: policy-dry-run
+          path: policy-dry-run-artifacts
+          if-no-files-found: error
+      - name: Capture policy telemetry snapshot
+        if: github.event_name == 'pull_request' && steps.policy_changes.outputs.changed == 'true'
+        run: python scripts/ci/run_policy_telemetry_snapshot.py
+      - name: Upload policy telemetry snapshot
+        if: github.event_name == 'pull_request' && steps.policy_changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: policy-telemetry
+          path: telemetry-artifacts
+          if-no-files-found: error

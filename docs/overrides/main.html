@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {% if page.meta and page.meta.template %}
+    {% include page.meta.template %}
+  {% endif %}
+  {{ super() }}
+{% endblock %}
+
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'assets/stylesheets/custom.css' | url }}">
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ 'assets/javascripts/custom.js' | url }}"></script>
+{% endblock %}
+
+{% block footer %}
+<footer class="memoria-footer">
+  <div class="memoria-footer__content">
+    <div class="memoria-footer__section">
+      <h4>Memoria Framework</h4>
+      <p>Professional memory layer for AI applications</p>
+    </div>
+    <div class="memoria-footer__section">
+      <h4>Resources</h4>
+      <ul>
+        <li><a href="{{ config.repo_url }}" target="_blank">GitHub Repository</a></li>
+        <li><a href="{{ config.repo_url }}/blob/main/README.md" target="_blank">Source Installation Guide</a></li>
+        <li><a href="{{ config.repo_url }}/issues" target="_blank">Report Issues</a></li>
+      </ul>
+    </div>
+    <div class="memoria-footer__section">
+      <h4>Documentation</h4>
+      <ul>
+        <li><a href="{{ config.site_url }}">Getting Started</a></li>
+        <li><a href="{{ config.site_url }}examples/">Examples</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="memoria-footer__bottom">
+    <p>&copy; 2024 Memoria Framework. Open source under MIT License.</p>
+  </div>
+</footer>
+{% endblock %}

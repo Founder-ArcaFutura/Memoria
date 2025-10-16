@@ -1,0 +1,222 @@
+version: "1.0"
+metadata:
+  description: >-
+    Baseline evaluation suites for Memoria's scenario-driven benchmark harness.
+    Suites combine curated fixtures with synthetic generators to model different
+    privacy mixes and memory topologies across representative enterprise teams.
+  last_updated: 2025-01-15
+  owners:
+    - evaluation@memoria.dev
+suites:
+  - id: customer_support_v1
+    name: Customer Support Baseline
+    description: >-
+      Measures recall, privacy handling, and namespace isolation for support
+      agents working across public knowledge base, authenticated account data,
+      and sensitive escalations.
+    use_cases:
+      - omnichannel ticket triage
+      - policy-compliant escalation summaries
+      - post-resolution follow ups
+    privacy_mix:
+      public: 0.25
+      internal: 0.45
+      restricted: 0.15
+      private: 0.15
+    memory_distribution:
+      long_term:
+        entries: 72
+        anchors: [product, troubleshooting, compliance]
+      short_term:
+        entries: 18
+        anchors: [ticket, resolution]
+      workspace_overlap:
+        shared: true
+        namespaces: [support_public, support_accounts, support_escalations]
+    metadata:
+      default_workspace_mode: collaborative
+      scoring_profile: support_baseline
+    scenarios:
+      - id: cs_public_kb
+        name: Knowledge Base Lookup
+        description: >-
+          Validates retrieval precision for public knowledge-base content mixed
+          with neutral product updates. Ensures no private anchors leak into
+          public prompts when only public tickets are active.
+        workspace: support_public
+        dataset:
+          kind: fixture
+          path: customer_support_public.jsonl
+        ingest_profile:
+          cadence: daily
+          batch_size: 12
+          channels: [web, email]
+        retrieval_tasks:
+          - query: "Reset procedure for Horizon router"
+            expected_anchors: [troubleshooting, firmware]
+            metrics:
+              recall_at_3: 0.8
+              precision_at_3: 0.7
+          - query: "Warranty period for Axis mini"
+            expected_anchors: [policy, warranty]
+            metrics:
+              recall_at_3: 0.85
+              precision_at_3: 0.75
+        privacy_expectations:
+          allow_public_overlap: true
+          max_private_leakage: 0
+      - id: cs_escalation_blend
+        name: Escalation Memory Stress Test
+        description: >-
+          Exercises privacy-aware retrieval for sensitive account escalations and
+          ensures namespace scoped memories remain isolated when querying mixed
+          contexts.
+        workspace: support_escalations
+        dataset:
+          kind: fixture
+          path: customer_support_escalations.jsonl
+        ingest_profile:
+          cadence: hourly
+          batch_size: 8
+          channels: [phone, secure_portal]
+        retrieval_tasks:
+          - query: "Latest status on account lock investigation"
+            expected_anchors: [security, investigation]
+            metrics:
+              recall_at_3: 0.75
+              precision_at_3: 0.7
+          - query: "VIP outage RCA summary"
+            expected_anchors: [incident, resolution]
+            metrics:
+              recall_at_5: 0.8
+              precision_at_5: 0.65
+        privacy_expectations:
+          enforce_namespace_boundary: true
+          require_admin_review: true
+      - id: cs_privacy_mix_generated
+        name: Synthetic Privacy Regression
+        description: >-
+          Generated scenario used to validate regression behaviour across a
+          stable privacy distribution without shipping additional customer data.
+        workspace: support_synthetic
+        dataset:
+          kind: generated
+          generator: synthetic_privacy_mix
+          filename: synthetic_support_privacy_mix.jsonl
+          parameters:
+            count: 36
+            namespaces: [support_public, support_accounts, support_escalations]
+            privacy_buckets:
+              public: 0.3
+              internal: 0.4
+              restricted: 0.2
+              private: 0.1
+            anchor_pool: [knowledge, process, security, customer]
+            cadence_days: 0.25
+            start: 2024-11-01T10:00:00
+            template: "{anchor} bulletin {index}"
+        ingest_profile:
+          cadence: rolling
+          batch_size: 18
+          channels: [synthetic]
+        retrieval_tasks:
+          - query: "Latest security bulletin"
+            expected_anchors: [security]
+            metrics:
+              recall_at_5: 0.7
+              precision_at_5: 0.7
+        privacy_expectations:
+          allow_public_overlap: false
+          synthetic_seed: 2024
+  - id: revenue_enablement_v1
+    name: Revenue Enablement Benchmark
+    description: >-
+      Blends enablement briefs, deal reviews, and competitive intel to measure
+      retrieval quality for GTM-focused agent workflows.
+    use_cases:
+      - sales play activation
+      - opportunity risk summarisation
+      - partner program Q&A
+    privacy_mix:
+      public: 0.2
+      internal: 0.5
+      restricted: 0.2
+      private: 0.1
+    memory_distribution:
+      long_term:
+        entries: 54
+        anchors: [product, finance, competitive]
+      short_term:
+        entries: 20
+        anchors: [deal, follow_up]
+      conscious:
+        entries: 14
+        anchors: [call_notes]
+    metadata:
+      default_workspace_mode: shared
+      scoring_profile: revenue_insights
+    scenarios:
+      - id: rev_enablement_briefs
+        name: Enablement Brief Recall
+        description: >-
+          Ensures playbooks and regional launch briefs remain discoverable when
+          short-term call notes dominate the workspace history.
+        workspace: revenue_briefs
+        dataset:
+          kind: fixture
+          path: revenue_enablement_mixed.jsonl
+        ingest_profile:
+          cadence: weekly
+          batch_size: 10
+          channels: [enablement_portal]
+        retrieval_tasks:
+          - query: "North region pricing update"
+            expected_anchors: [finance, pricing]
+            metrics:
+              recall_at_5: 0.75
+              precision_at_5: 0.7
+          - query: "Q4 launch play"
+            expected_anchors: [product, launch]
+            metrics:
+              recall_at_5: 0.8
+              precision_at_5: 0.72
+        privacy_expectations:
+          max_private_leakage: 0
+          enforce_workspace_membership: true
+      - id: rev_generated_comparison
+        name: Synthetic Competitive Intelligence
+        description: >-
+          Generated dataset that mirrors mixed competitive notes to keep the
+          benchmark shareable across organisations without exposing customer
+          specifics.
+        workspace: revenue_competitive
+        dataset:
+          kind: generated
+          generator: synthetic_privacy_mix
+          filename: synthetic_revenue_privacy_mix.jsonl
+          parameters:
+            count: 28
+            namespaces: [revenue_briefs, revenue_competitive]
+            privacy_buckets:
+              public: 0.15
+              internal: 0.55
+              restricted: 0.2
+              private: 0.1
+            anchor_pool: [product, finance, process]
+            cadence_days: 0.4
+            start: 2024-07-15T08:30:00
+            template: "Competitive insight {index}: {anchor}"
+            seed: 4242
+        ingest_profile:
+          cadence: biweekly
+          batch_size: 14
+          channels: [synthetic]
+        retrieval_tasks:
+          - query: "Competitive discounting notes"
+            expected_anchors: [finance]
+            metrics:
+              recall_at_5: 0.68
+              precision_at_5: 0.72
+        privacy_expectations:
+          allow_public_overlap: true
+          synthetic_seed: 4242

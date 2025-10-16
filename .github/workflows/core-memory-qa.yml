@@ -1,0 +1,91 @@
+name: Core Memory QA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'memoria/**'
+      - 'memoria_server/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/core-memory-qa.yml'
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      failure-threshold:
+        description: 'Allowed failing tests before the nightly job fails.'
+        required: false
+        default: '0'
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
+            requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run core memory smoke tests
+        run: |
+          pytest tests -k "memory or retention or storage" --maxfail=1 --disable-warnings -q
+
+  nightly:
+    if: github.event_name != 'pull_request'
+    name: Nightly Deep Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      FAILURE_THRESHOLD: ${{ github.event.inputs.failure-threshold || '0' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
+            requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run extended pytest suite
+        run: |
+          mkdir -p reports
+          pytest tests --junitxml=reports/nightly-pytest.xml --durations=25
+
+      - name: Upload pytest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-pytest-report
+          path: reports/nightly-pytest.xml
+
+      - name: Enforce failure threshold
+        if: always()
+        run: |
+          python scripts/ci/check_pytest_threshold.py reports/nightly-pytest.xml --threshold "${FAILURE_THRESHOLD}"

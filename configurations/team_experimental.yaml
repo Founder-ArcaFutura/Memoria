@@ -1,0 +1,27 @@
+#
+# Experimental Team-Aware Configuration
+#
+# This configuration enables the experimental team-aware features, allowing
+# multiple users or agents to share a memory space.
+#
+
+# -- General Settings --
+debug: false
+
+# -- Database Configuration --
+# A PostgreSQL database is recommended for team deployments.
+database:
+  connection_string: "postgresql://user:password@host:port/dbname"
+  migration_auto: true
+
+# -- AI Agent Settings --
+agents:
+  openai_api_key: "sk-your-openai-api-key"
+
+# -- Memory and Feature Toggles --
+memory:
+  # This enables the team memory features.
+  # - "disabled": (Default) No team features.
+  # - "optional": Team features are available but not required.
+  # - "required": A team context is required for all memory operations.
+  team_mode: "optional"

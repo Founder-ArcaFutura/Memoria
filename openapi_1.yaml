@@ -1,0 +1,1615 @@
+openapi: 3.1.0
+info:
+  title: Symbolic Memory API
+  version: v1.0.0
+  description: Symbolic memory management endpoints exposed by Memoria.
+paths:
+  /debug/anchors:
+    get:
+      summary: List distinct symbolic anchors across stored memories.
+      responses:
+        '200':
+          description: Anchors were collected successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnchorsResponse'
+        '500':
+          description: The anchors could not be retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: listDebugAnchors
+  /clusters:
+    get:
+      summary: Retrieve the most recent set of memory clusters with optional filters.
+      parameters:
+      - name: keyword
+        in: query
+        schema:
+          type: string
+        description: Return clusters containing the supplied keyword.
+      - name: min_polarity
+        in: query
+        schema:
+          type: number
+        description: Lower bound for average polarity.
+      - name: max_polarity
+        in: query
+        schema:
+          type: number
+        description: Upper bound for average polarity.
+      - name: min_size
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+        description: Minimum member count.
+      - name: max_size
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+        description: Maximum member count.
+      - name: min_importance
+        in: query
+        schema:
+          type: number
+        description: Minimum average importance.
+      - name: max_importance
+        in: query
+        schema:
+          type: number
+        description: Maximum average importance.
+      - name: min_weight
+        in: query
+        schema:
+          type: number
+        description: Minimum cumulative weight.
+      - name: max_weight
+        in: query
+        schema:
+          type: number
+        description: Maximum cumulative weight.
+      - name: min_age_seconds
+        in: query
+        schema:
+          type: number
+        description: Minimum number of seconds since the cluster was updated.
+      - name: max_age_seconds
+        in: query
+        schema:
+          type: number
+        description: Maximum number of seconds since the cluster was updated.
+      - name: sort_by
+        in: query
+        schema:
+          type: string
+        description: Sort field such as `avg_importance` or `size`.
+      - name: include_members
+        in: query
+        schema:
+          type: boolean
+        description: Include member memories for each cluster.
+      responses:
+        '200':
+          description: Clusters returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterListResponse'
+        '500':
+          description: The clusters could not be retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: listClusters
+    post:
+      summary: Rebuild the cluster index and return the resulting clusters.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterRebuildRequest'
+      responses:
+        '200':
+          description: The rebuild completed or was skipped.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterRebuildResponse'
+        '400':
+          description: The provided mode or source list was invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: The rebuild failed unexpectedly.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterRebuildResponse'
+      operationId: rebuildClusters
+  /clusters/status:
+    get:
+      summary: Report progress for the active cluster rebuild task.
+      responses:
+        '200':
+          description: Progress was returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterStatusResponse'
+      operationId: getClusterRebuildStatus
+  /clusters/activity:
+    get:
+      summary: Return the most active and fading clusters.
+      parameters:
+      - name: top_n
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 5
+        description: Number of active clusters to return.
+      - name: fading_threshold
+        in: query
+        schema:
+          type: number
+          default: 0.3
+        description: Maximum average importance for a cluster to be considered fading.
+      responses:
+        '200':
+          description: Cluster activity returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterActivityResponse'
+        '500':
+          description: The cluster activity query failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: getClusterActivity
+  /memory:
+    post:
+      summary: Store a single memory entry and return promotion status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemoryStoreRequest'
+      responses:
+        '200':
+          description: The memory was stored successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryStoreResponse'
+        '422':
+          description: The payload failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: The memory could not be stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: createMemoryEntry
+  /memory/ingestion:
+    post:
+      summary: Trigger the daily ingestion heuristic.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestionTriggerRequest'
+      responses:
+        '200':
+          description: The ingestion pass completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionReportResponse'
+        '500':
+          description: The ingestion pass failed to start or complete.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: triggerMemoryIngestion
+    get:
+      summary: Return the most recent ingestion report.
+      responses:
+        '200':
+          description: The ingestion report was returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionReportResponse'
+        '500':
+          description: The ingestion report could not be retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: getMemoryIngestionReport
+  /memory/conversation:
+    post:
+      summary: Record a conversational exchange and return its chat identifier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationRecordRequest'
+      responses:
+        '200':
+          description: The conversation was recorded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationRecordResponse'
+        '422':
+          description: The payload failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: The conversation could not be recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: recordConversation
+  /memory/{memory_id}:
+    put:
+      summary: Replace a stored memory entry and synchronize spatial metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemoryStoreRequest'
+      responses:
+        '200':
+          description: The memory was updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryUpdateResponse'
+        '404':
+          description: The requested memory was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation failed for the supplied payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: An unexpected error occurred while updating the memory.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: updateMemoryEntry
+      parameters:
+      - name: memory_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Identifier of the memory to target.
+    delete:
+      summary: Delete a memory entry and its spatial metadata.
+      responses:
+        '200':
+          description: The memory was deleted successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryDeleteResponse'
+        '404':
+          description: The memory was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: The memory could not be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: deleteMemoryEntry
+      parameters:
+      - name: memory_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Identifier of the memory to target.
+  /memory/recent:
+    get:
+      summary: Return the most recent memories with optional pagination.
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 10
+        description: Maximum number of memories to return.
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+        description: Number of recent memories to skip from the front of the result
+          set.
+      responses:
+        '200':
+          description: Recent memories returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryListWithHints'
+        '500':
+          description: Recent memories could not be retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: listRecentMemories
+  /memory/dashboard:
+    get:
+      summary: Return aggregated memory statistics for dashboard views.
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 100
+        description: Maximum number of recent memories to analyse.
+      - name: category
+        in: query
+        schema:
+          type: string
+        description: Comma-separated categories to include.
+      - name: memory_types
+        in: query
+        schema:
+          type: string
+        description: Comma-separated memory sources such as `short_term,long_term`.
+      responses:
+        '200':
+          description: Dashboard data returned successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Aggregated dashboard metrics keyed by category and importance
+                  buckets.
+                additionalProperties: true
+                properties:
+                  _placeholder:
+                    type: string
+        '500':
+          description: Dashboard metrics could not be generated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: getMemoryDashboardMetrics
+  /memory/anchor:
+    get:
+      summary: Retrieve memories tagged with one or more symbolic anchors.
+      parameters:
+      - name: anchor
+        in: query
+        schema:
+          type: string
+        description: Symbolic anchor to match. Repeat to provide multiple values.
+        style: form
+        explode: true
+      responses:
+        '200':
+          description: Memories returned successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  properties:
+                    _placeholder:
+                      type: string
+        '400':
+          description: The anchor parameter was malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Memories could not be retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: getMemoriesByAnchor
+  /memory/search:
+    get:
+      summary: Search memories by text, anchors, and spatial filters.
+      parameters:
+      - name: query
+        in: query
+        schema:
+          type: string
+        description: Full-text query string.
+      - name: q
+        in: query
+        schema:
+          type: string
+        description: Alias for `query`.
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 10
+        description: Maximum number of results.
+      - name: keyword
+        in: query
+        schema:
+          type: string
+        description: Keyword filter.
+        style: form
+        explode: true
+      - name: category
+        in: query
+        schema:
+          type: string
+        description: Category filter.
+        style: form
+        explode: true
+      - name: anchor
+        in: query
+        schema:
+          type: string
+        description: Symbolic anchor filter.
+        style: form
+        explode: true
+      - name: start_timestamp
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Earliest timestamp to include.
+      - name: end_timestamp
+        in: query
+        schema:
+          type: string
+          format: date-time
+        description: Latest timestamp to include.
+      - name: min_importance
+        in: query
+        schema:
+          type: number
+        description: Minimum importance score.
+      - name: x
+        in: query
+        schema:
+          type: number
+        description: Target x-coordinate (temporal axis).
+      - name: y
+        in: query
+        schema:
+          type: number
+        description: Target y-coordinate (privacy axis).
+      - name: z
+        in: query
+        schema:
+          type: number
+        description: Target z-coordinate (cognitive axis).
+      - name: max_distance
+        in: query
+        schema:
+          type: number
+        description: Maximum conceptual distance from the provided point.
+      responses:
+        '200':
+          description: Search completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '500':
+          description: The search failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: searchMemories
+  /memory/spatial:
+    get:
+      summary: Retrieve memories near a point in conceptual space.
+      parameters:
+      - name: mode
+        in: query
+        schema:
+          type: string
+          enum:
+          - 2d
+          - 3d
+          default: 3d
+        description: Use 2D (privacy/cognitive) or 3D (temporal/privacy/cognitive)
+          distance.
+      - name: x
+        in: query
+        schema:
+          type: number
+        required: false
+        description: Temporal axis. Required for 3D queries.
+      - name: y
+        in: query
+        schema:
+          type: number
+        required: true
+        description: Privacy axis.
+      - name: z
+        in: query
+        schema:
+          type: number
+        description: Cognitive axis. Required for 3D queries.
+      - name: max_distance
+        in: query
+        schema:
+          type: number
+          default: 5.0
+        description: Maximum conceptual distance from the origin point.
+      - name: anchor
+        in: query
+        schema:
+          type: string
+        description: Optional symbolic anchors to bias the search.
+        style: form
+        explode: true
+      responses:
+        '200':
+          description: Nearby memories returned successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  properties:
+                    _placeholder:
+                      type: string
+        '400':
+          description: The spatial request was invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: The spatial query failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: querySpatialMemories
+  /memory/teams:
+    get:
+      summary: ''
+    post:
+      summary: ''
+  /memory/teams/active:
+    delete:
+      summary: ''
+    get:
+      summary: ''
+  /memory/teams/namespaces:
+    get:
+      summary: ''
+  /memory/teams/{team_id}:
+    get:
+      parameters:
+      - in: path
+        name: team_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /memory/teams/{team_id}/activate:
+    post:
+      parameters:
+      - in: path
+        name: team_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /memory/teams/{team_id}/members:
+    post:
+      parameters:
+      - in: path
+        name: team_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+    put:
+      parameters:
+      - in: path
+        name: team_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /memory/teams/{team_id}/members/{user_id}:
+    delete:
+      parameters:
+      - in: path
+        name: team_id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /memory/time-range:
+    get:
+      summary: Retrieve memories that fall within a temporal range or x-axis bounds.
+      parameters:
+      - name: start_timestamp
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: end_timestamp
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: start_x
+        in: query
+        schema:
+          type: number
+      - name: end_x
+        in: query
+        schema:
+          type: number
+      responses:
+        '200':
+          description: Memories within the specified bounds.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  properties:
+                    _placeholder:
+                      type: string
+        '500':
+          description: The time range query failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: getMemoriesByTimeRange
+  /memory/thread:
+    post:
+      summary: Ingest a conversational thread into memory storage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadIngestionRequest'
+      responses:
+        '200':
+          description: The thread was processed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadIngestionResponse'
+        '422':
+          description: The thread payload failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: The thread could not be processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: ingestMemoryThread
+  /memory/{memory_id}/threads:
+    get:
+      summary: List conversational threads that include the memory.
+      responses:
+        '200':
+          description: Thread memberships returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryThreadsResponse'
+        '500':
+          description: Thread memberships could not be retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: listMemoryThreads
+      parameters:
+      - name: memory_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Identifier of the memory to inspect.
+  /memory/{memory_id}/threads/traverse:
+    get:
+      summary: Traverse linked memories connected through threads.
+      responses:
+        '200':
+          description: Traversal completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadTraversalResponse'
+        '500':
+          description: Traversal failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      operationId: traverseMemoryThreads
+      parameters:
+      - name: memory_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: depth
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+        description: Number of thread hops to traverse.
+  /memory/workspaces:
+    get:
+      summary: ''
+    post:
+      summary: ''
+  /memory/workspaces/active:
+    delete:
+      summary: ''
+    get:
+      summary: ''
+  /memory/workspaces/{workspace_id}:
+    get:
+      parameters:
+      - in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /memory/workspaces/{workspace_id}/activate:
+    post:
+      parameters:
+      - in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /memory/workspaces/{workspace_id}/members:
+    post:
+      parameters:
+      - in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+    put:
+      parameters:
+      - in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /memory/workspaces/{workspace_id}/members/{user_id}:
+    delete:
+      parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+      summary: ''
+  /manual:
+    get:
+      summary: Render an HTML form for storing memories manually.
+      responses:
+        '200':
+          description: Manual entry form rendered successfully.
+          content:
+            text/html:
+              schema:
+                type: string
+                description: HTML document containing a manual memory entry form.
+      operationId: renderManualMemoryForm
+    post:
+      summary: Submit the manual memory entry form.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ManualEntryForm'
+      responses:
+        '200':
+          description: Memory stored and confirmation rendered.
+          content:
+            text/html:
+              schema:
+                type: string
+                description: HTML page confirming storage or reporting validation
+                  errors.
+        '422':
+          description: The provided values failed validation.
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: The memory could not be stored.
+          content:
+            text/html:
+              schema:
+                type: string
+      operationId: submitManualMemoryForm
+components:
+  schemas:
+    AnchorsResponse:
+      type: object
+      properties:
+        anchors:
+          type: array
+          items:
+            type: string
+      required:
+      - anchors
+    ConversationRecordRequest:
+      type: object
+      required:
+      - user_input
+      properties:
+        user_input:
+          type: string
+          description: User provided utterance to persist.
+        ai_output:
+          description: Optional AI response payload. Accepts any JSON value.
+          anyOf:
+          - type: string
+          - type: number
+          - type: integer
+          - type: boolean
+          - type: object
+          - type: array
+          nullable: true
+        model:
+          type: string
+          description: Override model identifier associated with the exchange.
+          nullable: true
+        metadata:
+          type: object
+          description: Optional metadata to associate with the chat entry.
+          additionalProperties: true
+          nullable: true
+      additionalProperties: false
+    ConversationRecordResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Result status for the operation.
+          example: ok
+        chat_id:
+          type: string
+          description: Unique identifier for the recorded conversation.
+      required:
+      - status
+      - chat_id
+      additionalProperties: false
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+      required:
+      - status
+      - message
+      additionalProperties: true
+    ValidationErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - error
+        message:
+          type: array
+          description: Pydantic validation error payload.
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+      required:
+      - status
+      - message
+      additionalProperties: true
+    ClusterListResponse:
+      type: object
+      properties:
+        clusters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+      required:
+      - clusters
+      additionalProperties: false
+    ClusterRebuildRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum:
+          - heuristic
+          - vector
+        sources:
+          type: array
+          items:
+            type: string
+          description: List of sources to include in the rebuild process.
+      additionalProperties: true
+    ClusterRebuildResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+        clusters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+        summary:
+          type: object
+          additionalProperties: true
+          properties:
+            _placeholder:
+              type: string
+      required:
+      - status
+      - clusters
+      additionalProperties: true
+    ClusterStatusResponse:
+      type: object
+      properties:
+        state:
+          type: string
+        current:
+          type: integer
+        total:
+          type: integer
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - state
+      - current
+      - total
+      additionalProperties: true
+    ClusterActivityResponse:
+      type: object
+      properties:
+        active:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+        fading:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+      required:
+      - active
+      - fading
+      additionalProperties: false
+    MemoryEntry:
+      type: object
+      properties:
+        anchor:
+          type: string
+        text:
+          type: string
+        tokens:
+          type: integer
+        timestamp:
+          anyOf:
+          - type: string
+          - type: 'null'
+        x_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        y_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        z_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        symbolic_anchors:
+          type: array
+          items:
+            type: string
+          nullable: true
+      required:
+      - anchor
+      - text
+      - tokens
+      additionalProperties: true
+    MemoryStoreRequest:
+      type: object
+      properties:
+        anchor:
+          type: string
+        text:
+          type: string
+        tokens:
+          type: integer
+        timestamp:
+          anyOf:
+          - type: string
+          - type: 'null'
+        x_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        y_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        z_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        symbolic_anchors:
+          type: array
+          items:
+            type: string
+          nullable: true
+        promotion_weights:
+          type: object
+          description: Optional overrides for promotion heuristics.
+          additionalProperties:
+            type: number
+          properties:
+            _placeholder:
+              type: string
+      required:
+      - anchor
+      - text
+      - tokens
+      additionalProperties: true
+    MemoryStoreResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        anchor:
+          type: string
+        memory_id:
+          type: string
+        short_term_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        long_term_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        promotion_score:
+          type: number
+        threshold:
+          type: number
+        promoted:
+          type: boolean
+      required:
+      - status
+      - anchor
+      - memory_id
+      - short_term_id
+      - long_term_id
+      - promotion_score
+      - threshold
+      - promoted
+      additionalProperties: false
+    MemoryUpdateResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - updated
+        memory_id:
+          type: string
+      required:
+      - status
+      - memory_id
+      additionalProperties: false
+    MemoryDeleteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - deleted
+        memory_id:
+          type: string
+      required:
+      - status
+      - memory_id
+      additionalProperties: false
+    MemoryListWithHints:
+      type: object
+      properties:
+        memories:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+        hint:
+          type: string
+        error:
+          type: string
+      required:
+      - memories
+      additionalProperties: false
+    IngestionTriggerRequest:
+      type: object
+      properties:
+        promotion_weights:
+          type: object
+          additionalProperties:
+            type: number
+          properties:
+            _placeholder:
+              type: string
+      additionalProperties: false
+    IngestionReportResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        promoted_count:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+      required:
+      - status
+      - promoted_count
+      - results
+      additionalProperties: false
+    SearchResponse:
+      type: object
+      properties:
+        memories:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              _placeholder:
+                type: string
+        applied_filters:
+          type: object
+          description: Echo of the filters applied to the search request.
+          properties:
+            query:
+              type: string
+            limit:
+              type: integer
+            keywords:
+              type: array
+              items:
+                type: string
+            category:
+              type: array
+              items:
+                type: string
+            anchors:
+              type: array
+              items:
+                type: string
+            start_timestamp:
+              type: string
+              format: date-time
+            end_timestamp:
+              type: string
+              format: date-time
+            min_importance:
+              type: number
+            x:
+              type: number
+            y:
+              type: number
+            z:
+              type: number
+            max_distance:
+              type: number
+          additionalProperties: true
+        hint:
+          type: string
+        error:
+          type: string
+      required:
+      - memories
+      - applied_filters
+      additionalProperties: false
+    ThreadMessage:
+      type: object
+      properties:
+        anchor:
+          type: string
+        text:
+          type: string
+        tokens:
+          type: integer
+        timestamp:
+          anyOf:
+          - type: string
+          - type: 'null'
+        x_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        y_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        z_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        symbolic_anchors:
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: 'null'
+        role:
+          type: string
+        message_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        metadata:
+          anyOf:
+          - type: object
+            additionalProperties: true
+          - type: 'null'
+        chat_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        emotional_intensity:
+          anyOf:
+          - type: number
+          - type: 'null'
+      required:
+      - anchor
+      - text
+      - tokens
+      additionalProperties: true
+    RitualMetadata:
+      type: object
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+        phase:
+          anyOf:
+          - type: string
+          - type: 'null'
+        location:
+          anyOf:
+          - type: string
+          - type: 'null'
+        attributes:
+          anyOf:
+          - type: object
+            properties:
+              _placeholder:
+                type: string
+          - type: 'null'
+      additionalProperties: true
+    ThreadIngestionRequest:
+      type: object
+      properties:
+        thread_id:
+          type: string
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        shared_symbolic_anchors:
+          type: array
+          items:
+            type: string
+          nullable: true
+        ritual:
+          $ref: '#/components/schemas/RitualMetadata'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreadMessage'
+          minItems: 1
+        metadata:
+          anyOf:
+          - type: object
+            properties:
+              _placeholder:
+                type: string
+          - type: 'null'
+      required:
+      - messages
+      additionalProperties: true
+    ThreadMessageResult:
+      type: object
+      properties:
+        status:
+          type: string
+        memory_id:
+          type: string
+        short_term_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        long_term_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+        promotion_score:
+          type: number
+        threshold:
+          type: number
+        promoted:
+          type: boolean
+        sequence_index:
+          type: integer
+        role:
+          type: string
+        anchor:
+          type: string
+        symbolic_anchors:
+          type: array
+          items:
+            type: string
+      required:
+      - status
+      - memory_id
+      - short_term_id
+      - long_term_id
+      - promotion_score
+      - threshold
+      - promoted
+      - sequence_index
+      - role
+      - anchor
+      - symbolic_anchors
+      additionalProperties: true
+    Centroid:
+      type: object
+      properties:
+        x:
+          anyOf:
+          - type: number
+          - type: 'null'
+        y:
+          anyOf:
+          - type: number
+          - type: 'null'
+        z:
+          anyOf:
+          - type: number
+          - type: 'null'
+      additionalProperties: false
+    ThreadIngestionResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - processed
+        thread_id:
+          type: string
+        shared_symbolic_anchors:
+          type: array
+          items:
+            type: string
+        ritual:
+          $ref: '#/components/schemas/RitualMetadata'
+        centroid:
+          $ref: '#/components/schemas/Centroid'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreadMessageResult'
+      required:
+      - status
+      - thread_id
+      - shared_symbolic_anchors
+      - centroid
+      - messages
+      additionalProperties: true
+    MemoryThreadsResponse:
+      type: object
+      properties:
+        threads:
+          type: array
+          items:
+            type: object
+            properties:
+              thread_id:
+                type: string
+              sequence_index:
+                type: integer
+              role:
+                type: string
+              anchor:
+                type: string
+              timestamp:
+                anyOf:
+                - type: string
+                - type: 'null'
+              symbolic_anchors:
+                type: array
+                items:
+                  type: string
+              centroid:
+                $ref: '#/components/schemas/Centroid'
+            required:
+            - thread_id
+            - sequence_index
+            - role
+            - anchor
+            - symbolic_anchors
+            - centroid
+            additionalProperties: true
+      required:
+      - threads
+      additionalProperties: false
+    ThreadTraversalResponse:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            type: string
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              target:
+                type: string
+              relation:
+                anyOf:
+                - type: string
+                - type: 'null'
+            required:
+            - source
+            - target
+            additionalProperties: false
+      required:
+      - nodes
+      - links
+      additionalProperties: false
+    ManualEntryForm:
+      type: object
+      properties:
+        anchor:
+          type: string
+        text:
+          type: string
+        x_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        y_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        z_coord:
+          anyOf:
+          - type: number
+          - type: 'null'
+        symbolic_anchors:
+          type: string
+      required:
+      - anchor
+      - text
+      additionalProperties: true

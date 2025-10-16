@@ -1,0 +1,5 @@
+# Optional clustering dependencies for Memoria
+numpy>=1.24.0
+sentence-transformers>=2.5.1
+scikit-learn>=1.4.0
+textblob>=0.17.1

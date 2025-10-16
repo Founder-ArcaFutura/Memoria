@@ -1,0 +1,134 @@
+{
+  "version": "1.0.0",
+  "debug": false,
+  "verbose": false,
+  "enable_cluster_indexing": true,
+  "enable_heuristic_clustering": true,
+  "enable_vector_clustering": false,
+  "enable_vector_search": false,
+  "use_db_clusters": true,
+  "cluster_index_path": null,
+  "cluster_gravity_lambda": 1.6534391534391535e-06,
+  "database": {
+    "connection_string": "sqlite:///memoria.db",
+    "database_type": "sqlite",
+    "template": "basic",
+    "pool_size": 10,
+    "echo_sql": false,
+    "migration_auto": true,
+    "backup_enabled": false,
+    "backup_interval_hours": 24
+  },
+  "agents": {
+    "openai_api_key": null,
+    "anthropic_api_key": null,
+    "anthropic_model": null,
+    "anthropic_base_url": null,
+    "gemini_api_key": null,
+    "gemini_model": null,
+    "default_model": "gpt-4o-mini",
+    "fallback_model": "gpt-5-nano",
+    "max_tokens": 2000,
+    "temperature": 0.1,
+    "timeout_seconds": 30,
+    "retry_attempts": 3,
+    "conscious_ingest": false,
+    "task_model_routes": {
+      "memory_ingest": {
+        "provider": "primary",
+        "model": null,
+        "fallback": [
+          "openai"
+        ]
+      },
+      "search_planning": {
+        "provider": "primary",
+        "model": null,
+        "fallback": [
+          "anthropic",
+          "openai"
+        ]
+      }
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    "log_to_file": false,
+    "log_file_path": "logs/memoria.log",
+    "log_rotation": "10 MB",
+    "log_retention": "30 days",
+    "log_compression": "gz",
+    "structured_logging": false
+  },
+  "memory": {
+    "ingest_mode": "standard",
+    "personal_documents_enabled": false,
+    "namespace": "default",
+    "shared_memory": false,
+    "team_memory_enabled": false,
+    "team_namespace_prefix": "team",
+    "team_enforce_membership": true,
+    "team_mode": "disabled",
+    "team_default_id": null,
+    "team_share_by_default": false,
+    "workspace_mode": "disabled",
+    "workspace_default_id": null,
+    "sovereign_ingest": false,
+    "retention_policy": "30_days",
+    "auto_cleanup": true,
+    "cleanup_interval_hours": 24,
+    "importance_threshold": 0.3,
+    "max_short_term_memories": 1000,
+    "max_long_term_memories": 10000,
+    "context_injection": false,
+    "context_limit": 3,
+    "context_orchestration": true,
+    "context_small_query_limit": 3,
+    "context_large_query_limit": 6,
+    "context_max_prompt_memories": 8,
+    "context_small_query_token_threshold": 32,
+    "context_token_budget": 600,
+    "context_privacy_floor": -10.0,
+    "context_usage_boost_threshold": 3,
+    "coordinate_audit_enabled": true,
+    "coordinate_audit_lookback_days": 7,
+    "coordinate_audit_cadence": "weekly",
+    "context_usage_boost_limit": 2,
+    "context_usage_cache_seconds": 30.0,
+    "context_analytics_window_days": 7,
+    "context_analytics_top_n": 10,
+    "retention_update_interval_minutes": 30,
+    "retention_decay_half_life_hours": 72.0,
+    "conscious_analysis_interval_seconds": 21600,
+    "retention_reinforcement_bonus": 0.05,
+    "retention_privacy_shift": 0.5,
+    "retention_importance_floor": 0.05,
+    "retention_policy_rules": []
+  },
+  "integrations": {
+    "litellm_enabled": false,
+    "openai_wrapper_enabled": false,
+    "anthropic_wrapper_enabled": false,
+    "auto_enable_on_import": false,
+    "callback_timeout": 5
+  },
+  "sync": {
+    "enabled": false,
+    "backend": "none",
+    "connection_url": "redis://user:password@localhost/0",
+    "channel": "memoria-sync",
+    "options": {},
+    "realtime_replication": false,
+    "privacy_floor": null,
+    "privacy_ceiling": null
+  },
+  "plugins": [],
+  "policy": {
+    "retention_ceilings": [],
+    "namespace_privacy_floors": [],
+    "escalation_contacts": [],
+    "overrides": []
+  },
+  "custom_settings": {}
+}

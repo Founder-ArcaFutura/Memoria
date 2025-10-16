@@ -1,0 +1,4 @@
+# Run clustering index daily at 3 AM
+0 3 * * * /usr/bin/python /path/to/scripts/index_clusters.py >> /path/to/logs/index_clusters.log 2>&1
+# Recalculate importance weights hourly
+0 * * * * /usr/bin/python /path/to/scripts/recalculate_weights.py >> /path/to/logs/recalculate_weights.log 2>&1

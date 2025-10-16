@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memoria.dev/schemas/policy-artifacts.json",
+  "title": "Memoria Policy Artifact Payloads",
+  "type": "object",
+  "definitions": {
+    "retention_ceiling": {
+      "type": "object",
+      "required": ["name", "max_days"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "max_days": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "namespace_privacy_floor": {
+      "type": "object",
+      "required": ["name", "privacy_floor"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "privacy_floor": {
+          "type": "number",
+          "minimum": -15,
+          "maximum": 15
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "escalation_contact": {
+      "type": "object",
+      "required": ["name", "channel", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "channel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "urgent"]
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "override_rule": {
+      "type": "object",
+      "required": ["name", "action"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "target_policies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "action": {
+          "type": "string",
+          "enum": ["allow", "block", "redact", "require_approval"]
+        },
+        "stage": {
+          "type": "string",
+          "enum": ["ingestion", "retrieval", "sync"]
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "justification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

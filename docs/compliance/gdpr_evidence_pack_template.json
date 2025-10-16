@@ -1,0 +1,83 @@
+{
+  "pack_type": "gdpr",
+  "workspace_id": "{{workspace_id}}",
+  "assessment_window": {
+    "start": "{{iso8601_period_start}}",
+    "end": "{{iso8601_period_end}}"
+  },
+  "data_protection_officer": {
+    "name": "{{dpo_name}}",
+    "email": "{{email}}"
+  },
+  "policy_mappings": [
+    {
+      "policy_artifact_id": {{policy_artifact_id}},
+      "name": "{{name}}",
+      "namespace": "{{namespace}}",
+      "artifact_type": "{{artifact_type}}",
+      "schema_version": "{{schema_version}}",
+      "gdpr_articles": ["{{article_reference}}"],
+      "payload_digest_sha256": "{{payload_sha256}}",
+      "enforcement_mechanism": "{{automation_job_or_cli_workflow}}",
+      "change_request_url": "{{governance_change_request_url}}"
+    }
+  ],
+  "retention_events": [
+    {
+      "retention_audit_id": {{retention_audit_id}},
+      "memory_id": "{{memory_id}}",
+      "namespace": "{{namespace}}",
+      "policy_name": "{{policy_name}}",
+      "action": "block|delete|hold",
+      "escalate_to": "{{escalate_to}}",
+      "captured_at": "{{iso8601_timestamp}}",
+      "evidence_reference": "{{ndjson_or_csv_url}}"
+    }
+  ],
+  "data_subject_requests": [
+    {
+      "request_id": "{{request_id}}",
+      "origin": "portal|email|api",
+      "received_at": "{{iso8601_timestamp}}",
+      "fulfilled_at": "{{iso8601_timestamp}}",
+      "linked_policy_artifact_id": {{policy_artifact_id}},
+      "evidence_reference": "{{ticketing_or_archive_link}}"
+    }
+  ],
+  "incident_reports": [
+    {
+      "incident_id": "{{incident_id}}",
+      "reported_at": "{{iso8601_timestamp}}",
+      "status": "open|closed",
+      "summary": "{{notes}}",
+      "linked_policy_artifacts": [{{policy_artifact_ids}}],
+      "evidence_reference": "{{log_or_archive_url}}"
+    }
+  ],
+  "reviews": {
+    "collection": "{{notes}}",
+    "processing": "{{notes}}",
+    "storage_and_retention": "{{notes}}",
+    "access": "{{notes}}"
+  },
+  "approvals": {
+    "prepared_by": {
+      "name": "{{name}}",
+      "signed_at": "{{iso8601_timestamp}}"
+    },
+    "dpo": {
+      "name": "{{name}}",
+      "signed_at": "{{iso8601_timestamp}}"
+    },
+    "security": {
+      "name": "{{name}}",
+      "signed_at": "{{iso8601_timestamp}}"
+    },
+    "executive": {
+      "name": "{{name}}",
+      "signed_at": "{{iso8601_timestamp}}"
+    }
+  },
+  "archival_reference": "{{compliance_archive_location}}",
+  "notes": "{{supplemental_observations}}"
+}

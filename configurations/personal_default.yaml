@@ -1,0 +1,23 @@
+#
+# Personal Default Configuration for Memoria
+#
+# This configuration is a minimal setup for a single user running Memoria
+# on their local machine.
+#
+
+# -- General Settings --
+# It's recommended to keep debug mode off unless you're troubleshooting.
+debug: false
+
+# -- Database Configuration --
+# This uses a simple SQLite database file, which is perfect for personal use.
+# The database file (`memoria.db`) will be created in the same directory
+# where you run the server.
+database:
+  connection_string: "sqlite:///memoria.db"
+
+# -- AI Agent Settings --
+# Add your OpenAI API key here. You can also use other providers like
+# Anthropic or Gemini by adding their API keys.
+agents:
+  openai_api_key: "sk-your-openai-api-key"

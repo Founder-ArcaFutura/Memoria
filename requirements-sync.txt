@@ -1,0 +1,2 @@
+# Optional synchronization dependencies for Memoria
+redis>=4.0

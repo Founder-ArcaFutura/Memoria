@@ -1,0 +1,36 @@
+{
+  "name": "developer-onboarding",
+  "description": "Seeds developer background facts and confirms retrieval with targeted probes.",
+  "namespace": "quickstart_onboarding",
+  "database": "sqlite:///quickstart_onboarding.db",
+  "conscious_ingest": true,
+  "auto_ingest": true,
+  "facts": [
+    {
+      "anchor": "identity-riley",
+      "text": "Riley Chen is leading the analytics platform migration for Q4.",
+      "symbolic_anchors": ["identity", "project", "migration"],
+      "y": 10,
+      "z": 9
+    },
+    {
+      "anchor": "architecture-update",
+      "text": "The team is replacing the legacy warehouse with a lakehouse pattern backed by Delta Lake.",
+      "symbolic_anchors": ["architecture", "analytics"],
+      "y": 8,
+      "z": 11
+    }
+  ],
+  "probes": [
+    {
+      "label": "Identity recall",
+      "query": "Who is leading the platform migration?",
+      "expects": ["Riley", "analytics platform migration"]
+    },
+    {
+      "label": "Architecture decision",
+      "query": "What architecture change is planned for data storage?",
+      "expects": ["lakehouse", "Delta Lake"]
+    }
+  ]
+}

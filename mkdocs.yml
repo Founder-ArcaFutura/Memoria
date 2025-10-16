@@ -1,0 +1,126 @@
+site_name: Memoria
+site_description: The Open-Source Memory Layer for AI Agents & Multi-Agent Systems
+site_author: Adrian Hau
+site_url: https://docs.memoria.dev/
+
+repo_name: Founder-ArcaFutura/Memoria
+repo_url: https://github.com/Founder-ArcaFutura/Memoria
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: black
+    accent: blue
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.share
+    - toc.follow
+    - content.code.copy
+    - content.code.select
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Introduction: index.md
+  - Getting Started:
+    - Quick Start: getting-started/quick-start.md
+    - Installation: getting-started/installation.md
+    - Basic Usage: getting-started/basic-usage.md
+    - Shared Memory (Plain Language): getting-started/shared-memory-plain-language.md
+    - Governance (Plain Language): getting-started/governance-plain-language.md
+  - Open Source:
+    - Features: open-source/features.md
+    - Architecture:
+      - Overview: open-source/architecture.md
+      - Sync & Failover Playbook: open-source/architecture/sync-failover-playbook.md
+    - Deployments:
+      - Multi-Region Guide: open-source/deployments/multi-region.md
+    - Databases:
+      - Overview: open-source/databases/overview.md
+      - Operations: open-source/databases/operations.md
+    - LLMs:
+      - Overview: open-source/llms/overview.md
+      - Configurations: open-source/llms/configurations.md
+    - Evaluation Datasets: open-source/evaluation-datasets.md
+    - Releases:
+      - Phased Guides: advanced_usage/phased-guides.md
+      - GA Launch Announcement: advanced_usage/ga-launch-announcement.md
+  - Configuration:
+    - Settings: configuration/settings.md
+    - Single Configuration File: configuration/single-file.md
+    - Database Setup: configuration/database.md
+    - Providers: configuration/providers.md
+    - Evaluation Suites: configuration/evaluation-suites.md
+  - CLI:
+    - Overview: cli/index.md
+  - Core Concepts:
+    - Overview: core-concepts/overview.md
+    - Spatial & Symbolic Memory: core-concepts/spatial-memory.md
+    - Teams & Workspaces: core-concepts/teams-and-workspaces.md
+    - Agents: core-concepts/agents.md
+    - Search Ranking: core-concepts/search-ranking.md
+  - Integrations:
+    - Overview: integrations/overview.md
+  - Examples:
+    - Overview: examples/overview.md
+    - Basic Usage: examples/basic-usage.md
+    - Personal Diary Assistant: examples/personal-diary-assistant.md
+    - Researcher Agent: examples/researcher-agent.md
+    - Smart Shopping Assistant: examples/smart-shopping-assistant.md
+    - Travel Planner: examples/travel-planner.md
+    - Cluster Index Query: examples/cluster-index-query.md
+    - Short-Term Only Clustering: examples/cluster-short-term-only.md
+  - Contributing:
+    - Overview: contributing.md
+    - Secure Self-Hosted Runners: contributing/secure-self-hosted-runners.md
+
+extra:
+  social:
+    - icon: fontawesome/solid/globe
+      link: https://memoria.dev/
+      name: Memoria Community Website
+    - icon: fontawesome/brands/github
+      link: https://github.com/Founder-ArcaFutura/Memoria
+    - icon: fontawesome/brands/python
+      link: https://github.com/Founder-ArcaFutura/Memoria/blob/main/README.md
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js

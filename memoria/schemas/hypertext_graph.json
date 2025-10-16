@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.memoria.dev/hypertext-graph.json",
+  "title": "MemoriaHypertextGraph",
+  "description": "Schema describing the hypertext graph exported by Memoria for interactive front-end integrations.",
+  "type": "object",
+  "required": [
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "description": "Nodes rendered in the hypertext graph visualisation.",
+      "items": {
+        "$ref": "#/$defs/Node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Connections describing semantic relationships between nodes.",
+      "items": {
+        "$ref": "#/$defs/Edge"
+      }
+    },
+    "metadata": {
+      "$ref": "#/$defs/Metadata",
+      "description": "Context about how the graph snapshot was generated."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Node": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier used to reference the node in UI state and edges."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display label shown in the hypertext interface."
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Category for the node such as memory, summary, or anchor."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Short synopsis or tooltip content associated with the node."
+        },
+        "anchors": {
+          "type": "array",
+          "description": "Symbolic anchors or tags attached to the node.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp associated with the node when available."
+        },
+        "importance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Relative importance score (0-1) used for ranking and emphasis."
+        },
+        "coordinates": {
+          "type": "object",
+          "description": "Spatial coordinates used when rendering in the Memoria 3D space.",
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "properties": {
+            "x": {
+              "type": "number",
+              "description": "Temporal offset in days relative to the present."
+            },
+            "y": {
+              "type": "number",
+              "description": "Privacy axis value (-15 private, +15 public)."
+            },
+            "z": {
+              "type": "number",
+              "description": "Cognitive vs. physical axis value (-15 sensory, +15 abstract)."
+            }
+          },
+          "additionalProperties": false
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Hyperlink to open when the node is selected."
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#(?:[0-9a-fA-F]{3}){1,2}$",
+          "description": "Optional hex color override for the node."
+        },
+        "extras": {
+          "type": "object",
+          "description": "Implementation specific payload exposed to the front-end.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Edge": {
+      "type": "object",
+      "required": [
+        "id",
+        "source",
+        "target",
+        "relation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the edge."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the origin node."
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the destination node."
+        },
+        "relation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Label describing the relationship between the connected nodes."
+        },
+        "weight": {
+          "type": "number",
+          "description": "Optional weighting used for layout or scoring."
+        },
+        "directed": {
+          "type": "boolean",
+          "description": "Whether the edge should be treated as directed."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Implementation specific properties about the edge.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Metadata": {
+      "type": "object",
+      "required": [
+        "generated_at",
+        "version"
+      ],
+      "properties": {
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp representing when the graph snapshot was produced."
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version for the graph payload."
+        },
+        "source": {
+          "type": "string",
+          "description": "Description of the backend or dataset that produced the graph."
+        },
+        "filters": {
+          "type": "object",
+          "description": "Filters applied when generating the graph (namespaces, anchors, etc.).",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "array",
+              "object",
+              "null"
+            ]
+          }
+        },
+        "viewport": {
+          "type": "object",
+          "description": "Optional default viewport details for initial render state.",
+          "properties": {
+            "center": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 3
+            },
+            "zoom": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

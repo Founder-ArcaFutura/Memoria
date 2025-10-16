@@ -1,0 +1,47 @@
+# Core dependencies for Memoria
+# Production requirements
+
+# WSGI server
+gunicorn>=20.0.0
+
+# Logging
+Flask>=2.3.0
+loguru>=0.6.0
+Flask-Cors>=4.0.0
+
+# Data validation and parsing
+pydantic>=1.10,<2.0
+jsonschema>=4.0.0
+# YAML output for OpenAPI generation
+PyYAML>=6.0.0
+
+# Configuration management
+python-dotenv>=1.0.0
+
+# Database ORM (required for core functionality)
+sqlalchemy>=2.0.0
+
+# Scheduling
+apscheduler>=3.10.1
+
+# Fuzzy string matching for search fallbacks
+rapidfuzz>=3.0.0
+
+# AI/LLM integration (required for core functionality)
+openai>=1.0.0
+
+# Optional: clustering dependencies
+# Install with `pip install -e ".[cluster]"` or `-r requirements-cluster.txt`
+# Optional: Database drivers (install as needed)
+# psycopg2-binary>=2.9.0        # PostgreSQL
+# mysql-connector-python>=8.0.0 # MySQL (memoria.database.connectors.mysql_connector)
+# Optional: synchronization backend (Redis)
+# Install with `pip install -e ".[sync]"` or `-r requirements-sync.txt`
+
+# Optional: Additional AI/LLM integrations (install as needed)
+# anthropic>=0.3.0
+litellm>=1.0.0,<1.35.0
+# google-generativeai>=0.5.0   # Google Gemini SDK
+
+# Optional: Development and testing dependencies
+# For full development environment, use: pip install -r requirements-dev.txt

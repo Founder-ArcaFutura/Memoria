@@ -1,0 +1,23 @@
+#
+# Personal Configuration with PostgreSQL
+#
+# This configuration shows how to connect Memoria to a PostgreSQL database.
+# This is a more robust setup suitable for users who want a production-
+# ready database. This is considered an experimental feature.
+#
+
+# -- General Settings --
+debug: false
+
+# -- Database Configuration --
+# Replace the user, password, host, port, and dbname with your
+# PostgreSQL server's details.
+database:
+  connection_string: "postgresql://user:password@host:port/dbname"
+  # It's highly recommended to keep auto-migrations on.
+  migration_auto: true
+
+# -- AI Agent Settings --
+# Add your OpenAI API key here.
+agents:
+  openai_api_key: "sk-your-openai-api-key"

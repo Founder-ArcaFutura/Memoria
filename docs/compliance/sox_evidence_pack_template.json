@@ -1,0 +1,68 @@
+{
+  "pack_type": "sox",
+  "workspace_id": "{{workspace_id}}",
+  "reporting_period": {
+    "start": "{{iso8601_period_start}}",
+    "end": "{{iso8601_period_end}}"
+  },
+  "policy_artifacts": [
+    {
+      "id": {{policy_artifact_id}},
+      "name": "{{name}}",
+      "artifact_type": "{{artifact_type}}",
+      "namespace": "{{namespace}}",
+      "schema_version": "{{schema_version}}",
+      "payload_digest_sha256": "{{payload_sha256}}",
+      "storage_reference": "s3://.../policy_artifacts/{{policy_artifact_id}}.json",
+      "change_request_url": "{{governance_change_request_url}}",
+      "last_reviewed_at": "{{iso8601_timestamp}}",
+      "reviewer": "{{name}} <{{email}}>",
+      "notes": "{{additional_context}}"
+    }
+  ],
+  "automation_runs": [
+    {
+      "job_identifier": "{{job_name}}",
+      "trigger": "scheduled|manual",
+      "run_at": "{{iso8601_timestamp}}",
+      "policy_scope": "{{namespace}}",
+      "result": "pass|fail",
+      "evidence_reference": "{{log_or_artifact_url}}",
+      "linked_audit_records": [
+        {
+          "source": "retention_policy_audits",
+          "record_id": {{retention_audit_id}},
+          "action": "{{action}}",
+          "escalate_to": "{{escalate_to}}",
+          "captured_at": "{{iso8601_timestamp}}",
+          "export_reference": "{{ndjson_or_csv_url}}"
+        }
+      ]
+    }
+  ],
+  "manual_reviews": [
+    {
+      "completed_at": "{{iso8601_timestamp}}",
+      "reviewer": "{{name}}",
+      "scope": "{{policy_artifact_name}}",
+      "exception_log": "{{link_to_exception_register}}",
+      "outcome": "approved|changes_requested"
+    }
+  ],
+  "approvals": {
+    "engineering": {
+      "name": "{{name}}",
+      "signed_at": "{{iso8601_timestamp}}"
+    },
+    "compliance": {
+      "name": "{{name}}",
+      "signed_at": "{{iso8601_timestamp}}"
+    },
+    "executive": {
+      "name": "{{name}}",
+      "signed_at": "{{iso8601_timestamp}}"
+    }
+  },
+  "archival_reference": "{{compliance_archive_location}}",
+  "notes": "{{supplemental_observations}}"
+}

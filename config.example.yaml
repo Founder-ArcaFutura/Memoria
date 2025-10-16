@@ -1,0 +1,81 @@
+#
+# Example Configuration for Memoria
+#
+# To use this file:
+# 1. Copy it to `config.yaml` in the same directory.
+# 2. Edit the values below to match your setup.
+# 3. The server will automatically load `config.yaml` if it exists.
+#
+# Alternatively, all settings can be configured using environment variables.
+# For example, `database.connection_string` can be set with the environment
+# variable `MEMORIA_DATABASE__CONNECTION_STRING`.
+#
+# For server security, it is highly recommended to set an API key using the
+# `MEMORIA_API_KEY` environment variable.
+#
+
+# -- General Settings --
+debug: false
+verbose: false
+
+# -- Database Configuration --
+# Defines the connection to your database.
+# By default, Memoria uses a simple SQLite database file.
+# For production, consider using PostgreSQL.
+database:
+  # Connection string for SQLAlchemy.
+  # Examples:
+  #   SQLite: "sqlite:///memoria.db"
+  #   PostgreSQL: "postgresql://user:password@host:port/dbname"
+  connection_string: "sqlite:///memoria.db"
+  # Automatically run database migrations on startup.
+  migration_auto: true
+
+# -- AI Agent Settings --
+# Configure the LLM providers Memoria will use for processing.
+agents:
+  # --- Provider API Keys ---
+  # Add your API keys here. At least one is required for most features.
+  openai_api_key: "sk-..."
+  anthropic_api_key: null
+  gemini_api_key: null
+
+  # --- Model Selection ---
+  # The default model to use for operations like memory ingestion.
+  default_model: "gpt-4o-mini"
+  # A fallback model if the primary one fails.
+  fallback_model: "gpt-3.5-turbo"
+
+# -- Memory and Feature Toggles --
+# Configure core memory behaviors and enable/disable features.
+memory:
+  # The default namespace for storing memories.
+  namespace: "default"
+
+  # --- Experimental Feature: Team Memory ---
+  # Enables multi-user collaboration features.
+  # Modes: "disabled", "optional", "required"
+  team_mode: "disabled"
+
+  # --- Experimental Feature: Conscious Ingestion ---
+  # Enables an experimental agent to intelligently filter what gets stored.
+  sovereign_ingest: false
+
+# -- Integrations --
+# Enable or disable integrations with other tools.
+integrations:
+  # --- Experimental Feature: LiteLLM ---
+  # Enables Memoria to use LiteLLM for routing requests to over 100 LLMs.
+  # See https://litellm.ai/ for more details.
+  litellm_enabled: false
+
+# -- Governance and Retention Policy --
+# An optional set of rules to manage memory lifecycle and privacy.
+# This is an advanced feature and can be left empty.
+policy:
+  retention_rules: []
+  # Example rule:
+  # - name: "Block highly private memories from being stored"
+  #   namespaces: ["*"]
+  #   privacy_ceiling: -10.0 # blocks memories with privacy score > -10
+  #   action: "block"
