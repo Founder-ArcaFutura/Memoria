@@ -2,8 +2,7 @@
 
 # Memoria
 
-[![GitHub release](https://img.shields.io/github/v/release/Founder-ArcaFutura/Memoria?style=flat-square)](https://github.com/Founder-ArcaFutura/Memoria/releases)
-[![License](https://img.shields.io/github/license/Founder-ArcaFutura/Memoria?style=flat-square)](./LICENSE)
+
 
 Memoria is an open-source, auditable memory system for Large Language Models (LLMs). It gives your AI agents a persistent, queryable "working memory" that goes far beyond the limits of a standard context window.
 
