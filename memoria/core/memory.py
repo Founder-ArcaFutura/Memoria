@@ -363,6 +363,7 @@ class Memoria:
         memory_filters: dict[str, Any] | None = None,
         openai_api_key: str | None = None,
         user_id: str | None = None,
+        agent_id: str | None = None,
         verbose: bool = False,
         sovereign_ingest: bool | None = None,
         # New provider configuration parameters
@@ -602,6 +603,8 @@ class Memoria:
             initial_team_candidate = self.default_team_id
         self.memory_filters = memory_filters or {}
         self.user_id = user_id
+        self.agent_id = agent_id
+        self.agent_profile: dict[str, Any] | None = None
         self.verbose = verbose
         self.schema_init = schema_init
         self.database_prefix = database_prefix
@@ -618,6 +621,26 @@ class Memoria:
         self.db_manager: DatabaseManager
         self.storage_service: StorageService
 
+        # Initialize database manager early to inspect agent metadata
+        self.db_manager = DatabaseManager(
+            database_connect, template, schema_init, enable_short_term
+        )
+
+        explicit_model_provided = model is not None
+        preferred_model_override: str | None = None
+        candidate_agent_ids: list[str] = []
+        if agent_id:
+            candidate_agent_ids.append(agent_id)
+        if user_id and user_id not in candidate_agent_ids:
+            candidate_agent_ids.append(user_id)
+        for candidate in candidate_agent_ids:
+            profile = self.db_manager.get_agent(candidate)
+            if profile:
+                self.agent_profile = profile
+                self.agent_id = profile.get("agent_id", candidate)
+                preferred_model_override = profile.get("preferred_model") or preferred_model_override
+                break
+
         # Load default model from central configuration
         self.default_model = settings.agents.default_model
         config_sovereign_ingest = getattr(memory_settings, "sovereign_ingest", False)
@@ -626,6 +649,9 @@ class Memoria:
             if sovereign_ingest is None
             else bool(sovereign_ingest)
         )
+        if preferred_model_override and not explicit_model_provided:
+            self.default_model = preferred_model_override
+            model = preferred_model_override
         self.conscious_analysis_interval_seconds = getattr(
             settings.memory,
             "conscious_analysis_interval_seconds",
@@ -668,13 +694,14 @@ class Memoria:
         provider_result = setup_provider_components(provider_inputs)
         self._apply_provider_setup(provider_result)
 
+        if preferred_model_override and not explicit_model_provided:
+            self.default_model = preferred_model_override
+            self.model = preferred_model_override
+            if hasattr(self.provider_config, "model"):
+                setattr(self.provider_config, "model", preferred_model_override)
+
         # Setup logging based on verbose mode
         self._setup_logging()
-
-        # Initialize database manager
-        self.db_manager = DatabaseManager(
-            database_connect, template, schema_init, enable_short_term
-        )
 
         # Initialize supporting managers dependent on provider state
         self.conscious_manager = ConsciousManager(self)
@@ -724,7 +751,10 @@ class Memoria:
             search_engine=self.search_engine,
             conscious_ingest=self.conscious_ingest,
             user_id=self.user_id,
+            agent_id=self.agent_id,
         )
+        if self.agent_id and not self.agent_profile:
+            self.agent_profile = self.storage_service.get_agent(self.agent_id)
         self.policy_engine = self.storage_service.policy_engine
         self.storage_service.configure_team_policy(
             namespace_prefix=self.team_namespace_prefix,
@@ -1531,6 +1561,21 @@ class Memoria:
         # Fallback
         return str(response), "unknown"
 
+    def _resolve_last_editor(self, model_name: str | None) -> str:
+        """Determine the identifier recorded for provenance tracking."""
+
+        if model_name and str(model_name).strip():
+            return str(model_name).strip()
+        if self.agent_profile:
+            preferred = self.agent_profile.get("preferred_model")
+            if preferred:
+                return str(preferred)
+        if self.agent_id:
+            return str(self.agent_id)
+        if self.user_id:
+            return str(self.user_id)
+        return "human"
+
     def record_conversation(
         self,
         user_input: str,
@@ -1571,6 +1616,7 @@ class Memoria:
             model=response_model,
             namespace=self.namespace,
             metadata=metadata or {},
+            edited_by_model=self._resolve_last_editor(response_model),
         )
 
         # Always process into long-term memory when memory agent is available
@@ -1731,6 +1777,7 @@ class Memoria:
                         chat_id,
                         self.namespace,
                         workspace_id=self.storage_service.workspace_id,
+                        edited_by_model=self._resolve_last_editor(model),
                     )
                     if short_term_id:
                         logger.debug(
@@ -1796,6 +1843,7 @@ class Memoria:
                 chat_id,
                 self.namespace,
                 workspace_id=self.storage_service.workspace_id,
+                edited_by_model=self._resolve_last_editor(model),
             )
 
             if memory_id:
@@ -1965,6 +2013,7 @@ class Memoria:
                     chat_id,
                     self.namespace,
                     workspace_id=self.storage_service.workspace_id,
+                    edited_by_model=self._resolve_last_editor(model),
                 )
             except Exception as exc:
                 logger.error(
@@ -2110,6 +2159,7 @@ class Memoria:
             metadata={"auto_generated": True},
             team_id=team_id,
             workspace_id=workspace_id,
+            edited_by_model=self._resolve_last_editor("auto-generated"),
         )
 
     def _prepare_team_context(
@@ -2575,6 +2625,11 @@ class Memoria:
                 staged.chat_id,
                 staged.namespace,
                 workspace_id=target_workspace,
+                edited_by_model=self._resolve_last_editor(
+                    staged.metadata.get("model")
+                    if hasattr(staged, "metadata") and isinstance(staged.metadata, Mapping)
+                    else None
+                ),
             )
 
             if long_term_id:
@@ -3061,6 +3116,7 @@ class Memoria:
             namespace=self.namespace,
             tokens_used=total_tokens,
             metadata=chat_metadata,
+            edited_by_model=self._resolve_last_editor(self.default_model),
         )
 
         self.storage_service.store_thread(

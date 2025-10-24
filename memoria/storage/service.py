@@ -113,6 +113,7 @@ class StorageService:
         team_id: str | None = None,
         workspace_id: str | None = None,
         user_id: str | None = None,
+        agent_id: str | None = None,
         policy_engine: PolicyEnforcementEngine | None = None,
 
     ) -> None:
@@ -132,6 +133,7 @@ class StorageService:
         self._active_workspace_context: WorkspaceContext | None = None
         self.workspace_id = workspace_id
         self._default_user_id = self._clean_identifier(user_id)
+        self._default_agent_id = self._clean_identifier(agent_id)
         self._policy_engine = policy_engine or PolicyEnforcementEngine.get_global()
         self._sync_realtime = False
         self._sync_privacy_floor: float | None = None
@@ -144,6 +146,9 @@ class StorageService:
         self._workspace_cache = WorkspaceCache()
         self._workspace_enforce_membership = True
         self._retention_policies: tuple[RetentionPolicyRule, ...] = ()
+        self._agent_profiles: dict[str, dict[str, Any]] = {}
+
+        self._refresh_agent_cache()
 
     @property
     def team_id(self) -> str | None:
@@ -253,6 +258,12 @@ class StorageService:
         cleaned = value.strip()
         return cleaned or None
 
+    def _resolve_actor_identifier(self, user_id: str | None) -> str | None:
+        identifier = self._clean_identifier(user_id)
+        if identifier:
+            return identifier
+        return self._default_user_id or self._default_agent_id
+
     def _normalise_team_id(self, team_id: str) -> str:
         cleaned = self._clean_identifier(team_id)
         if not cleaned:
@@ -293,7 +304,84 @@ class StorageService:
             context["workspace_id"] = self.workspace_id
         if self._default_user_id:
             context["user_id"] = self._default_user_id
+        elif self._default_agent_id:
+            context["user_id"] = self._default_agent_id
+        if self._default_agent_id:
+            context["agent_id"] = self._default_agent_id
         return context
+
+    # ------------------------------------------------------------------
+    # Agent registry helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_agent_cache(self) -> None:
+        """Refresh the local cache of agent metadata."""
+
+        try:
+            records = self.db_manager.list_agents()
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug("Unable to refresh agent cache: %s", exc)
+            records = []
+
+        with getattr(self, "_cache_lock", threading.RLock()):
+            self._agent_profiles = {
+                self._clean_identifier(record.get("agent_id")) or record.get("agent_id"): record
+                for record in records
+                if record.get("agent_id")
+            }
+
+    def _is_agent_identifier(self, identifier: str | None) -> bool:
+        cleaned = self._clean_identifier(identifier)
+        if not cleaned:
+            return False
+        return cleaned in self._agent_profiles
+
+    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
+        cleaned = self._clean_identifier(agent_id)
+        if not cleaned:
+            return None
+        with self._cache_lock:
+            profile = self._agent_profiles.get(cleaned)
+        if profile is not None:
+            return copy.deepcopy(profile)
+
+        record = self.db_manager.get_agent(cleaned)
+        if record is None:
+            return None
+        with self._cache_lock:
+            self._agent_profiles[cleaned] = record
+        return copy.deepcopy(record)
+
+    def register_agent(
+        self,
+        agent_id: str,
+        *,
+        name: str | None = None,
+        role: str | None = None,
+        preferred_model: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        profile = self.db_manager.register_agent(
+            agent_id,
+            name=name,
+            role=role,
+            preferred_model=preferred_model,
+            metadata=metadata,
+        )
+        cleaned = self._clean_identifier(profile.get("agent_id"))
+        if cleaned:
+            with self._cache_lock:
+                self._agent_profiles[cleaned] = profile
+        return copy.deepcopy(profile)
+
+    def list_agents(self) -> list[dict[str, Any]]:
+        with self._cache_lock:
+            if self._agent_profiles:
+                return [copy.deepcopy(profile) for profile in self._agent_profiles.values()]
+
+        self._refresh_agent_cache()
+        with self._cache_lock:
+            return [copy.deepcopy(profile) for profile in self._agent_profiles.values()]
 
     def _run_policy_check(
         self,
@@ -498,6 +586,7 @@ class StorageService:
         display_name: str | None = None,
         members: Iterable[str] | None = None,
         admins: Iterable[str] | None = None,
+        agents: Iterable[str] | None = None,
         share_by_default: bool | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> TeamSpace:
@@ -514,11 +603,23 @@ class StorageService:
         admin_set = self._collect_unique_identifiers(
             admins, label="workspace admin"
         )
+        agent_set = self._collect_unique_identifiers(
+            agents, label="agent identifier"
+        )
+        for candidate in member_set | admin_set:
+            if self._is_agent_identifier(candidate):
+                agent_set.add(candidate)
         default_share = (
             bool(share_by_default)
             if share_by_default is not None
             else self._team_default_share
         )
+
+        agent_profiles: dict[str, dict[str, Any]] = {}
+        for agent_id in agent_set:
+            profile = self.get_agent(agent_id)
+            if profile:
+                agent_profiles[agent_id] = profile
 
         team = TeamSpace(
             team_id=normalized_id,
@@ -528,6 +629,8 @@ class StorageService:
             metadata=dict(metadata or {}),
             members=member_set,
             admins=admin_set,
+            agent_members=agent_set,
+            agent_profiles=agent_profiles,
         )
 
         with self._cache_lock:
@@ -548,6 +651,7 @@ class StorageService:
         *,
         members: Iterable[str] | None = None,
         admins: Iterable[str] | None = None,
+        agents: Iterable[str] | None = None,
     ) -> TeamSpace:
         normalized_id = self._normalise_team_id(team_id)
         member_set = (
@@ -560,9 +664,25 @@ class StorageService:
             if admins is not None
             else None
         )
+        agent_set = (
+            self._collect_unique_identifiers(agents, label="agent identifier")
+            if agents is not None
+            else None
+        )
+        agent_profiles: dict[str, dict[str, Any]] | None = None
+        if agent_set is not None:
+            agent_profiles = {}
+            for agent_id in agent_set:
+                profile = self.get_agent(agent_id)
+                if profile:
+                    agent_profiles[agent_id] = profile
         with self._cache_lock:
             return self._team_cache.update_members(
-                normalized_id, members=member_set, admins=admin_set
+                normalized_id,
+                members=member_set,
+                admins=admin_set,
+                agents=agent_set,
+                agent_profiles=agent_profiles,
             )
 
     def add_team_members(
@@ -582,6 +702,23 @@ class StorageService:
                 normalized_id, additions, as_admin=as_admin
             )
 
+    def add_team_agents(
+        self, team_id: str, agents: Iterable[str]
+    ) -> TeamSpace:
+        normalized_id = self._normalise_team_id(team_id)
+        agent_set = self._collect_unique_identifiers(
+            agents, label="agent identifier"
+        )
+        profiles = {
+            agent_id: profile
+            for agent_id in agent_set
+            if (profile := self.get_agent(agent_id)) is not None
+        }
+        with self._cache_lock:
+            return self._team_cache.add_agents(
+                normalized_id, agent_set, profiles=profiles
+            )
+
     def remove_team_member(self, team_id: str, user_id: str) -> TeamSpace:
         normalized_id = self._normalise_team_id(team_id)
         target = self._clean_identifier(user_id)
@@ -596,7 +733,7 @@ class StorageService:
             return team_user_has_access(
                 self._team_cache,
                 normalized_id,
-                self._clean_identifier(user_id),
+                self._resolve_actor_identifier(user_id),
             )
 
     def require_team_access(self, team_id: str, user_id: str | None) -> TeamSpace:
@@ -605,12 +742,12 @@ class StorageService:
             return ensure_team_access(
                 self._team_cache,
                 normalized_id,
-                self._clean_identifier(user_id),
+                self._resolve_actor_identifier(user_id),
                 enforce_membership=self._team_enforce_membership,
             )
 
     def get_accessible_namespaces(self, user_id: str | None) -> set[str]:
-        identifier = self._clean_identifier(user_id)
+        identifier = self._resolve_actor_identifier(user_id)
         with self._cache_lock:
             namespaces: set[str] = {self._personal_namespace_name()}
             if identifier is None:
@@ -700,13 +837,22 @@ class StorageService:
 
             members: set[str] = set()
             admins: set[str] = set()
+            agents: set[str] = set()
+            agent_profiles: dict[str, dict[str, Any]] = {}
             for membership in workspace.members or []:
                 identifier = self._clean_identifier(getattr(membership, "user_id", None))
                 if not identifier:
                     continue
-                members.add(identifier)
+                is_agent_member = getattr(membership, "is_agent", False)
                 if getattr(membership, "is_admin", False):
                     admins.add(identifier)
+                if is_agent_member:
+                    agents.add(identifier)
+                    profile = self.get_agent(identifier)
+                    if profile:
+                        agent_profiles[identifier] = profile
+                else:
+                    members.add(identifier)
 
             metadata: dict[str, Any] = {}
             owner_id = getattr(workspace, "owner_id", None)
@@ -723,6 +869,8 @@ class StorageService:
                 metadata=metadata,
                 members=members,
                 admins=admins,
+                agents=agents,
+                agent_profiles=agent_profiles,
             )
 
     def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None:
@@ -747,7 +895,7 @@ class StorageService:
         if not normalized:
             raise MemoriaError("Workspace identifier must be provided")
 
-        identifier = self._clean_identifier(user_id) or self._default_user_id
+        identifier = self._resolve_actor_identifier(user_id)
         context = self.get_workspace_context(normalized)
         if context is None:
             raise MemoriaError(f"Unknown workspace: {workspace_id}")

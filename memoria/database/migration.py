@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .models import (
+    Agent,
     ChatHistory,
     Cluster,
     ClusterMember,
@@ -63,6 +64,7 @@ TEAM_INDEXES: dict[str, list[tuple[str, tuple[str, ...], bool]]] = {
 
 EXPORT_TABLES: OrderedDict[str, Any] = OrderedDict(
     [
+        ("agents", Agent),
         ("teams", Team),
         ("workspaces", Workspace),
         ("workspace_members", WorkspaceMember),

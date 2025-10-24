@@ -109,6 +109,7 @@ class WorkspaceMember(Base):
     user_id = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="member")
     is_admin = Column(Boolean, nullable=False, default=False)
+    is_agent = Column(Boolean, nullable=False, default=False)
     joined_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -143,6 +144,7 @@ class ChatHistory(Base):
     workspace_id = Column(
         String(255), ForeignKey("workspaces.workspace_id", ondelete="SET NULL")
     )
+    last_edited_by_model = Column(String(255))
 
     # Relationships
     short_term_memories = relationship(
@@ -160,6 +162,7 @@ class ChatHistory(Base):
         Index("idx_chat_team", "team_id"),
         Index("idx_chat_workspace", "workspace_id"),
         Index("idx_chat_workspace_namespace", "workspace_id", "namespace"),
+        Index("idx_chat_last_editor", "last_edited_by_model"),
     )
 
 
@@ -193,6 +196,7 @@ class ShortTermMemory(Base):
     workspace_id = Column(
         String(255), ForeignKey("workspaces.workspace_id", ondelete="SET NULL")
     )
+    last_edited_by_model = Column(String(255))
 
     # Relationships
     chat = relationship("ChatHistory", back_populates="short_term_memories")
@@ -220,6 +224,7 @@ class ShortTermMemory(Base):
         Index("idx_short_term_namespace_team", "namespace", "team_id"),
         Index("idx_short_term_workspace", "workspace_id"),
         Index("idx_short_term_namespace_workspace", "namespace", "workspace_id"),
+        Index("idx_short_term_last_editor", "last_edited_by_model"),
         CheckConstraint(
             f"(y_coord IS NULL OR (y_coord >= {Y_AXIS.min} AND y_coord <= {Y_AXIS.max}))",
             name="ck_short_term_y_coord_range",
@@ -262,6 +267,7 @@ class LongTermMemory(Base):
     workspace_id = Column(
         String(255), ForeignKey("workspaces.workspace_id", ondelete="SET NULL")
     )
+    last_edited_by_model = Column(String(255))
 
     # Enhanced Classification Fields
     classification = Column(String(50), nullable=False, default="conversational")
@@ -334,6 +340,7 @@ class LongTermMemory(Base):
         Index("idx_long_term_namespace_team", "namespace", "team_id"),
         Index("idx_long_term_workspace", "workspace_id"),
         Index("idx_long_term_namespace_workspace", "namespace", "workspace_id"),
+        Index("idx_long_term_last_editor", "last_edited_by_model"),
         CheckConstraint(
             f"(y_coord IS NULL OR (y_coord >= {Y_AXIS.min} AND y_coord <= {Y_AXIS.max}))",
             name="ck_long_term_y_coord_range",
@@ -342,6 +349,30 @@ class LongTermMemory(Base):
             f"(z_coord IS NULL OR (z_coord >= {Z_AXIS.min} AND z_coord <= {Z_AXIS.max}))",
             name="ck_long_term_z_coord_range",
         ),
+    )
+
+
+class Agent(Base):
+    """Registered AI agent identities with model preferences."""
+
+    __tablename__ = "agents"
+
+    agent_id = Column(String(255), primary_key=True)
+    name = Column(String(255), nullable=False)
+    role = Column(String(255))
+    preferred_model = Column(String(255))
+    is_agent = Column(Boolean, nullable=False, default=True)
+    metadata_ = Column("metadata", JSON, default=dict)
+    __mapper_args__ = {"properties": {"metadata": metadata_}}
+    metadata_json = synonym("metadata")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        Index("idx_agent_preferred_model", "preferred_model"),
+        Index("idx_agent_role", "role"),
     )
 
 
