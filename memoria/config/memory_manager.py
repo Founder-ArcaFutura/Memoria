@@ -402,6 +402,7 @@ class MemoryManager:
         share_with_team: bool | None = None,
         return_status: bool = False,
         ingest_mode: IngestMode | str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> str | dict[str, Any]:
         perms = permissions or AgentPermissions()
         if not perms.can_write:
@@ -428,6 +429,7 @@ class MemoryManager:
                 workspace_id=workspace_id,
                 return_status=return_status,
                 ingest_mode=ingest_mode,
+                last_edited_by_model=last_edited_by_model,
             )
 
         if not self.storage_service:
@@ -456,6 +458,7 @@ class MemoryManager:
             symbolic_anchors=symbolic_anchors,
             emotional_intensity=emotional_intensity,
             chat_id=chat_id,
+            last_edited_by_model=last_edited_by_model,
         )
 
     def store_personal_memory(
@@ -607,6 +610,7 @@ class MemoryManager:
                 model=resolved_model,
                 namespace=namespace,
                 metadata=resolved_metadata,
+                last_edited_by_model=resolved_model,
             )
             return chat_id
 

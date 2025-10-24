@@ -99,6 +99,7 @@ def test_workspace_wrappers_return_workspace_payload(memoria_instance):
     assert payload["namespace"] == "team-alpha"
     assert payload["members"] == ["alice", "bob"]
     assert payload["admins"] == ["carol", "dave"]
+    assert any(profile["user_id"] == "alice" for profile in payload["member_profiles"])
     assert "team_id" not in payload
 
     listing = memoria_instance.list_workspaces(include_members=True)
@@ -106,6 +107,7 @@ def test_workspace_wrappers_return_workspace_payload(memoria_instance):
     assert listing[0]["workspace_id"] == "alpha"
     assert listing[0]["members"] == ["alice", "bob"]
     assert listing[0]["admins"] == ["carol", "dave"]
+    assert all("is_agent" in profile for profile in listing[0]["member_profiles"])
     assert "team_id" not in listing[0]
 
     fetched = memoria_instance.get_workspace("alpha", include_members=True)
@@ -135,6 +137,24 @@ def test_workspace_wrappers_return_workspace_payload(memoria_instance):
     assert after_update["members"] == ["alice", "eve"]
     assert after_update["admins"] == ["dave"]
     assert "team_id" not in after_update
+
+
+def test_workspace_agent_metadata_preserved(memoria_instance):
+    payload = memoria_instance.register_workspace(
+        "beta",
+        namespace="team-beta",
+        members=[{"user_id": "agent-7", "is_agent": True, "preferred_model": "gpt-4o"}],
+        admins=[{"user_id": "lead", "is_agent": False}],
+        include_members=True,
+    )
+
+    assert payload["workspace_id"] == "beta"
+    profiles = {profile["user_id"]: profile for profile in payload["member_profiles"]}
+    assert profiles["agent-7"]["is_agent"] is True
+    assert profiles["agent-7"]["preferred_model"] == "gpt-4o"
+    assert profiles["agent-7"]["role"] == "member"
+    assert profiles["lead"]["role"] == "admin"
+    assert profiles["lead"]["is_agent"] is False
 
 
 def test_workspace_wrapper_failures(memoria_instance):

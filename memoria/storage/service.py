@@ -81,6 +81,7 @@ from ..utils.pydantic_models import (
 )
 from ..sync import SyncEvent, SyncEventAction
 from .team_workspace import (
+    TeamMemberProfile,
     TeamSpace,
     TeamSpaceCache,
     WorkspaceCache,
@@ -284,6 +285,70 @@ class StorageService:
             raise MemoriaError(f"Duplicate {label} identifiers: {formatted}")
 
         return unique
+
+    def _parse_member_specs(
+        self,
+        values: Iterable[str | Mapping[str, Any]] | None,
+        *,
+        label: str,
+    ) -> tuple[set[str], dict[str, TeamMemberProfile]]:
+        """Normalise member/admin payloads into identifiers and metadata."""
+
+        identifiers: set[str] = set()
+        duplicates: set[str] = set()
+        metadata: dict[str, TeamMemberProfile] = {}
+
+        if values is None:
+            return identifiers, metadata
+
+        for raw in values:
+            cleaned: str | None = None
+            profile: TeamMemberProfile | None = None
+
+            if isinstance(raw, Mapping):
+                user_value = raw.get("user_id") or raw.get("id") or raw.get("user")
+                if user_value is not None:
+                    cleaned = self._clean_identifier(str(user_value))
+                if not cleaned:
+                    continue
+                preferred_raw = raw.get("preferred_model")
+                preferred_model = (
+                    self._clean_identifier(preferred_raw)
+                    if isinstance(preferred_raw, str)
+                    else None
+                )
+                edited_raw = raw.get("last_edited_by_model")
+                last_edited_by_model = (
+                    self._clean_identifier(edited_raw)
+                    if isinstance(edited_raw, str)
+                    else None
+                )
+                profile = TeamMemberProfile(
+                    user_id=cleaned,
+                    is_agent=bool(raw.get("is_agent", False)),
+                    preferred_model=preferred_model,
+                    last_edited_by_model=last_edited_by_model,
+                    explicit=True,
+                )
+            else:
+                if raw is None:
+                    continue
+                cleaned = self._clean_identifier(str(raw))
+                if not cleaned:
+                    continue
+                profile = TeamMemberProfile(user_id=cleaned)
+
+            if cleaned in identifiers:
+                duplicates.add(cleaned)
+            else:
+                identifiers.add(cleaned)
+            metadata[cleaned] = profile
+
+        if duplicates:
+            formatted = ", ".join(sorted(duplicates))
+            raise MemoriaError(f"Duplicate {label} identifiers: {formatted}")
+
+        return identifiers, metadata
 
     def _default_policy_context(self) -> dict[str, Any]:
         context: dict[str, Any] = {"namespace": self.namespace or "default"}
@@ -496,8 +561,8 @@ class StorageService:
         *,
         namespace: str | None = None,
         display_name: str | None = None,
-        members: Iterable[str] | None = None,
-        admins: Iterable[str] | None = None,
+        members: Iterable[str | Mapping[str, Any]] | None = None,
+        admins: Iterable[str | Mapping[str, Any]] | None = None,
         share_by_default: bool | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> TeamSpace:
@@ -508,10 +573,10 @@ class StorageService:
             self._clean_identifier(namespace)
             or f"{self._team_namespace_prefix}:{normalized_id}"
         )
-        member_set = self._collect_unique_identifiers(
+        member_set, member_profiles = self._parse_member_specs(
             members, label="workspace member"
         )
-        admin_set = self._collect_unique_identifiers(
+        admin_set, admin_profiles = self._parse_member_specs(
             admins, label="workspace admin"
         )
         default_share = (
@@ -519,6 +584,10 @@ class StorageService:
             if share_by_default is not None
             else self._team_default_share
         )
+
+        combined_profiles: dict[str, TeamMemberProfile] = {}
+        combined_profiles.update(member_profiles)
+        combined_profiles.update(admin_profiles)
 
         team = TeamSpace(
             team_id=normalized_id,
@@ -528,6 +597,7 @@ class StorageService:
             metadata=dict(metadata or {}),
             members=member_set,
             admins=admin_set,
+            member_metadata=combined_profiles,
         )
 
         with self._cache_lock:
@@ -546,41 +616,77 @@ class StorageService:
         self,
         team_id: str,
         *,
-        members: Iterable[str] | None = None,
-        admins: Iterable[str] | None = None,
+        members: Iterable[str | Mapping[str, Any]] | None = None,
+        admins: Iterable[str | Mapping[str, Any]] | None = None,
     ) -> TeamSpace:
         normalized_id = self._normalise_team_id(team_id)
-        member_set = (
-            self._collect_unique_identifiers(members, label="workspace member")
-            if members is not None
-            else None
-        )
-        admin_set = (
-            self._collect_unique_identifiers(admins, label="workspace admin")
-            if admins is not None
-            else None
-        )
+        member_set: set[str] | None = None
+        admin_set: set[str] | None = None
+        member_profiles: dict[str, TeamMemberProfile] = {}
+        admin_profiles: dict[str, TeamMemberProfile] = {}
+
+        if members is not None:
+            member_set, member_profiles = self._parse_member_specs(
+                members, label="workspace member"
+            )
+
+        if admins is not None:
+            admin_set, admin_profiles = self._parse_member_specs(
+                admins, label="workspace admin"
+            )
+
         with self._cache_lock:
+            existing_space = self._team_cache.get(normalized_id)
+            existing_members = existing_space.members if existing_space else set()
+            existing_admins = existing_space.admins if existing_space else set()
+            final_members = member_set if member_set is not None else existing_members
+            final_admins = admin_set if admin_set is not None else existing_admins
+
+            metadata_payload: dict[str, TeamMemberProfile] | None = None
+            if member_profiles or admin_profiles:
+                combined: dict[str, TeamMemberProfile] = {}
+                if existing_space is not None:
+                    for user_id, profile in (existing_space.member_metadata or {}).items():
+                        if user_id in final_members or user_id in final_admins:
+                            combined[user_id] = profile
+                for user_id, profile in member_profiles.items():
+                    existing = combined.get(user_id)
+                    if existing is not None and not profile.explicit:
+                        continue
+                    combined[user_id] = profile
+                for user_id, profile in admin_profiles.items():
+                    existing = combined.get(user_id)
+                    if existing is not None and not profile.explicit:
+                        continue
+                    combined[user_id] = profile
+                metadata_payload = combined
+
             return self._team_cache.update_members(
-                normalized_id, members=member_set, admins=admin_set
+                normalized_id,
+                members=member_set,
+                admins=admin_set,
+                metadata=metadata_payload,
             )
 
     def add_team_members(
         self,
         team_id: str,
-        members: Iterable[str],
+        members: Iterable[str | Mapping[str, Any]],
         *,
         as_admin: bool = False,
     ) -> TeamSpace:
         normalized_id = self._normalise_team_id(team_id)
-        additions = self._collect_unique_identifiers(
+        additions, metadata_payload = self._parse_member_specs(
             members,
             label="workspace admin" if as_admin else "workspace member",
         )
         with self._cache_lock:
-            return self._team_cache.add_members(
+            space = self._team_cache.add_members(
                 normalized_id, additions, as_admin=as_admin
             )
+            if metadata_payload:
+                self._team_cache.add_member_metadata(normalized_id, metadata_payload)
+            return space
 
     def remove_team_member(self, team_id: str, user_id: str) -> TeamSpace:
         normalized_id = self._normalise_team_id(team_id)
@@ -609,17 +715,50 @@ class StorageService:
                 enforce_membership=self._team_enforce_membership,
             )
 
-    def get_accessible_namespaces(self, user_id: str | None) -> set[str]:
-        identifier = self._clean_identifier(user_id)
+    def get_accessible_contexts(self, user_id: str | None) -> list[dict[str, Any]]:
+        """Return metadata for personal and shared namespaces available to a user."""
+
+        cleaned = self._clean_identifier(user_id)
+        contexts: list[dict[str, Any]] = [
+            {
+                "namespace": self._personal_namespace_name(),
+                "context_type": "personal",
+                "user_id": cleaned or self._default_user_id,
+                "is_agent": False,
+                "preferred_model": None,
+                "last_edited_by_model": None,
+            }
+        ]
+
         with self._cache_lock:
-            namespaces: set[str] = {self._personal_namespace_name()}
-            if identifier is None:
-                return namespaces
-            for team_id in self._team_cache.team_ids_for_user(identifier):
+            if cleaned is None:
+                return contexts
+            for team_id in sorted(self._team_cache.team_ids_for_user(cleaned)):
                 space = self._team_cache.get(team_id)
-                if space is not None:
-                    namespaces.add(space.namespace)
-            return namespaces
+                if space is None:
+                    continue
+                profile = space.get_member_profile(cleaned)
+                profile_payload = profile.to_dict() if profile else {"user_id": cleaned, "is_agent": False}
+                contexts.append(
+                    {
+                        "namespace": space.namespace,
+                        "team_id": space.team_id,
+                        "display_name": space.display_name,
+                        "context_type": "team",
+                        "user_id": cleaned,
+                        "is_agent": profile_payload.get("is_agent", False),
+                        "preferred_model": profile_payload.get("preferred_model"),
+                        "last_edited_by_model": profile_payload.get("last_edited_by_model"),
+                    }
+                )
+        return contexts
+
+    def get_accessible_namespaces(self, user_id: str | None) -> set[str]:
+        return {
+            context["namespace"]
+            for context in self.get_accessible_contexts(user_id)
+            if context.get("namespace")
+        }
 
     def configure_workspace_policy(
         self, *, enforce_membership: bool | None = None
@@ -700,6 +839,7 @@ class StorageService:
 
             members: set[str] = set()
             admins: set[str] = set()
+            profiles: dict[str, TeamMemberProfile] = {}
             for membership in workspace.members or []:
                 identifier = self._clean_identifier(getattr(membership, "user_id", None))
                 if not identifier:
@@ -707,6 +847,18 @@ class StorageService:
                 members.add(identifier)
                 if getattr(membership, "is_admin", False):
                     admins.add(identifier)
+                profile = TeamMemberProfile(
+                    user_id=identifier,
+                    is_agent=bool(getattr(membership, "is_agent", False)),
+                    preferred_model=self._clean_identifier(
+                        getattr(membership, "preferred_model", None)
+                    ),
+                    last_edited_by_model=self._clean_identifier(
+                        getattr(membership, "last_edited_by_model", None)
+                    ),
+                    explicit=True,
+                )
+                profiles[identifier] = profile
 
             metadata: dict[str, Any] = {}
             owner_id = getattr(workspace, "owner_id", None)
@@ -723,6 +875,7 @@ class StorageService:
                 metadata=metadata,
                 members=members,
                 admins=admins,
+                member_profiles=profiles,
             )
 
     def get_workspace_context(self, workspace_id: str) -> WorkspaceContext | None:
@@ -3257,6 +3410,7 @@ class StorageService:
         chat_id: str | None = None,
         workspace_id: str | None = None,
         user_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> str:
         """Directly store a memory into the database with spatial metadata."""
         symbolic_anchors = canonicalize_symbolic_anchors(symbolic_anchors)
@@ -3293,6 +3447,7 @@ class StorageService:
             "team_id": effective_team_id,
             "workspace_id": effective_workspace_id,
             "chat_id": resolved_chat_id,
+            "last_edited_by_model": last_edited_by_model,
         }
         removed_fields: set[str] = set()
 
@@ -3338,6 +3493,9 @@ class StorageService:
             "workspace_id", effective_workspace_id
         )
         resolved_chat_id = ingestion_state.get("chat_id", resolved_chat_id)
+        last_edited_by_model = ingestion_state.get(
+            "last_edited_by_model", last_edited_by_model
+        )
 
         if decision.action is PolicyAction.REDACT:
             policy_payload["redacted"] = True
@@ -3371,6 +3529,7 @@ class StorageService:
                         metadata={"auto_generated": True},
                         team_id=effective_team_id,
                         workspace_id=effective_workspace_id,
+                        last_edited_by_model=last_edited_by_model,
                     )
                 memory = LongTermMemory(
                     memory_id=memory_id,
@@ -3394,6 +3553,7 @@ class StorageService:
                     y_coord=y_coord,
                     z_coord=z_coord,
                     symbolic_anchors=symbolic_anchors or [anchor],
+                    last_edited_by_model=last_edited_by_model,
                 )
                 session.add(memory)
                 session.commit()
@@ -4159,6 +4319,7 @@ class StorageService:
         importance_score: float = 0.5,
         metadata: dict[str, Any] | None = None,
         workspace_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> StagedManualMemory:
         """Stage a manual memory by writing it to short-term storage and spatial metadata."""
 
@@ -4207,6 +4368,7 @@ class StorageService:
             "chat_id": resolved_chat_id,
             "metadata": dict(metadata or {}) if metadata else {},
             "importance_score": importance_score,
+            "last_edited_by_model": last_edited_by_model,
         }
         removed_fields: set[str] = set()
 
@@ -4257,6 +4419,9 @@ class StorageService:
         resolved_chat_id = ingestion_state.get("chat_id", resolved_chat_id)
         metadata = ingestion_state.get("metadata", metadata)
         importance_score = ingestion_state.get("importance_score", importance_score)
+        last_edited_by_model = ingestion_state.get(
+            "last_edited_by_model", last_edited_by_model
+        )
 
         processed_payload = {
             "text": text,
@@ -4284,6 +4449,7 @@ class StorageService:
                     symbolic_anchors=symbolic_anchors,
                     team_id=effective_team_id,
                     workspace_id=effective_workspace_id,
+                    last_edited_by_model=last_edited_by_model,
                 )
                 short_term_stored = True
             except Exception as exc:  # pragma: no cover - defensive logging

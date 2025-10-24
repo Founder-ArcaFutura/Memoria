@@ -109,6 +109,9 @@ class WorkspaceMember(Base):
     user_id = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="member")
     is_admin = Column(Boolean, nullable=False, default=False)
+    is_agent = Column(Boolean, nullable=False, default=False)
+    preferred_model = Column(String(255))
+    last_edited_by_model = Column(String(255))
     joined_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -132,6 +135,7 @@ class ChatHistory(Base):
     user_input = Column(Text, nullable=False)
     ai_output = Column(Text, nullable=False)
     model = Column(String(255), nullable=False)
+    last_edited_by_model = Column(String(255))
     timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
     session_id = Column(String(255), nullable=False)
     namespace = Column(String(255), nullable=False, default="default")
@@ -189,6 +193,7 @@ class ShortTermMemory(Base):
     z_coord = Column(Float, doc=Z_AXIS.description)
     symbolic_anchors = Column(JSON)
     embedding = Column(JSON)
+    last_edited_by_model = Column(String(255))
     team_id = Column(String(255), ForeignKey("teams.team_id", ondelete="SET NULL"))
     workspace_id = Column(
         String(255), ForeignKey("workspaces.workspace_id", ondelete="SET NULL")
@@ -258,6 +263,7 @@ class LongTermMemory(Base):
     symbolic_anchors = Column(JSON)
     embedding = Column(JSON)
     documents_json = Column(JSON)
+    last_edited_by_model = Column(String(255))
     team_id = Column(String(255), ForeignKey("teams.team_id", ondelete="SET NULL"))
     workspace_id = Column(
         String(255), ForeignKey("workspaces.workspace_id", ondelete="SET NULL")

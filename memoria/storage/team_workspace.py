@@ -11,6 +11,27 @@ from ..utils.exceptions import MemoriaError
 
 
 @dataclass
+class TeamMemberProfile:
+    """Metadata describing a collaborator or agent within a team namespace."""
+
+    user_id: str
+    is_agent: bool = False
+    preferred_model: str | None = None
+    last_edited_by_model: str | None = None
+    explicit: bool = False
+
+    def to_dict(self, *, role: str | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"user_id": self.user_id, "is_agent": bool(self.is_agent)}
+        if role:
+            payload["role"] = role
+        if self.preferred_model:
+            payload["preferred_model"] = self.preferred_model
+        if self.last_edited_by_model:
+            payload["last_edited_by_model"] = self.last_edited_by_model
+        return payload
+
+
+@dataclass
 class TeamSpace:
     """Definition of a collaborative namespace shared across multiple users."""
 
@@ -21,6 +42,7 @@ class TeamSpace:
     metadata: dict[str, Any] = field(default_factory=dict)
     members: set[str] = field(default_factory=set)
     admins: set[str] = field(default_factory=set)
+    member_metadata: dict[str, TeamMemberProfile] = field(default_factory=dict)
 
     def iter_members(self, include_admins: bool = True) -> set[str]:
         """Return a copy of the member identifiers for this team."""
@@ -29,6 +51,11 @@ class TeamSpace:
         if include_admins:
             people.update({admin for admin in self.admins if admin})
         return people
+
+    def get_member_profile(self, user_id: str) -> TeamMemberProfile | None:
+        """Return the stored metadata for ``user_id`` when available."""
+
+        return self.member_metadata.get(user_id)
 
     def is_member(self, user_id: str | None) -> bool:
         """Return whether ``user_id`` is part of the team (members or admins)."""
@@ -52,6 +79,25 @@ class TeamSpace:
         if include_members:
             payload["members"] = sorted(self.members)
             payload["admins"] = sorted(self.admins)
+            if self.member_metadata:
+                profiles: list[dict[str, Any]] = []
+                for user_id, profile in sorted(self.member_metadata.items()):
+                    role: str | None
+                    if user_id in self.admins:
+                        role = "admin"
+                    elif user_id in self.members:
+                        role = "member"
+                    else:
+                        role = None
+                    if hasattr(profile, "to_dict"):
+                        serialised = profile.to_dict(role=role)
+                    else:
+                        serialised = dict(profile)
+                        if role:
+                            serialised.setdefault("role", role)
+                    serialised.setdefault("user_id", user_id)
+                    profiles.append(serialised)
+                payload["member_profiles"] = profiles
         return payload
 
 
@@ -68,6 +114,7 @@ class WorkspaceContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     members: set[str] = field(default_factory=set)
     admins: set[str] = field(default_factory=set)
+    member_profiles: dict[str, TeamMemberProfile] = field(default_factory=dict)
 
     def iter_members(self, include_admins: bool = True) -> set[str]:
         """Return identifiers for members and optionally admins."""
@@ -76,6 +123,11 @@ class WorkspaceContext:
         if include_admins:
             people.update({admin for admin in self.admins if admin})
         return people
+
+    def get_member_profile(self, user_id: str) -> TeamMemberProfile | None:
+        """Return stored profile metadata for ``user_id`` when present."""
+
+        return self.member_profiles.get(user_id)
 
     def is_member(self, user_id: str | None) -> bool:
         """Return whether ``user_id`` belongs to this workspace."""
@@ -106,6 +158,25 @@ class WorkspaceContext:
             payload["admins"] = sorted(self.admins)
         if self.members:
             payload["members"] = sorted(self.members)
+        if self.member_profiles:
+            profiles: list[dict[str, Any]] = []
+            for user_id, profile in sorted(self.member_profiles.items()):
+                role: str | None
+                if user_id in self.admins:
+                    role = "admin"
+                elif user_id in self.members:
+                    role = "member"
+                else:
+                    role = None
+                if hasattr(profile, "to_dict"):
+                    serialised = profile.to_dict(role=role)
+                else:
+                    serialised = dict(profile)
+                    if role:
+                        serialised.setdefault("role", role)
+                serialised.setdefault("user_id", user_id)
+                profiles.append(serialised)
+            payload["member_profiles"] = profiles
         return payload
 
 
@@ -136,6 +207,7 @@ class TeamSpaceCache:
         *,
         members: Iterable[str] | None = None,
         admins: Iterable[str] | None = None,
+        metadata: dict[str, TeamMemberProfile] | None = None,
     ) -> TeamSpace:
         space = self._spaces.get(team_id)
         if space is None:
@@ -144,6 +216,16 @@ class TeamSpaceCache:
             space.members = set(members)
         if admins is not None:
             space.admins = set(admins)
+        if metadata is not None:
+            space.member_metadata = {
+                user_id: copy.deepcopy(profile) for user_id, profile in metadata.items()
+            }
+        else:
+            # Ensure metadata does not reference removed members
+            current_people = space.iter_members(include_admins=True)
+            for user_id in list(space.member_metadata.keys()):
+                if user_id not in current_people:
+                    space.member_metadata.pop(user_id, None)
         self._rebuild_member_index()
         return copy.deepcopy(space)
 
@@ -161,12 +243,22 @@ class TeamSpaceCache:
         self._rebuild_member_index()
         return copy.deepcopy(space)
 
+    def add_member_metadata(
+        self, team_id: str, metadata: dict[str, TeamMemberProfile]
+    ) -> None:
+        space = self._spaces.get(team_id)
+        if space is None:
+            raise MemoriaError(f"Unknown team: {team_id}")
+        for user_id, profile in metadata.items():
+            space.member_metadata[user_id] = copy.deepcopy(profile)
+
     def remove_member(self, team_id: str, user_id: str) -> TeamSpace:
         space = self._spaces.get(team_id)
         if space is None:
             raise MemoriaError(f"Unknown team: {team_id}")
         space.members.discard(user_id)
         space.admins.discard(user_id)
+        space.member_metadata.pop(user_id, None)
         self._rebuild_member_index()
         return copy.deepcopy(space)
 

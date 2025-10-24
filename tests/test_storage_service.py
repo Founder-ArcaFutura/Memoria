@@ -18,6 +18,7 @@ from memoria.config.settings import (
 )
 from memoria.core.database import DatabaseManager
 from memoria.database.models import (
+    ChatHistory,
     LongTermMemory,
     MemoryAccessEvent,
     RetentionPolicyAudit,
@@ -706,6 +707,116 @@ def test_workspace_namespace_resolution_honors_share_defaults(tmp_path):
             mem._retention_scheduler.stop()
 
 
+def test_accessible_contexts_include_agent_metadata(tmp_path):
+    db_url = f"sqlite:///{tmp_path/'accessible_contexts.db'}"
+    mem = Memoria(
+        database_connect=db_url,
+        enable_short_term=False,
+        user_id="agent-1",
+        team_memory_enabled=True,
+        team_enforce_membership=True,
+    )
+    try:
+        service = mem.storage_service
+        service.register_team_space(
+            "ops",
+            members=[{"user_id": "agent-1", "is_agent": True, "preferred_model": "gpt-4o"}],
+            admins=[{"user_id": "lead", "is_agent": False}],
+            share_by_default=True,
+        )
+
+        contexts = service.get_accessible_contexts("agent-1")
+        personal = next(ctx for ctx in contexts if ctx["context_type"] == "personal")
+        assert personal["is_agent"] is False
+        team_context = next(ctx for ctx in contexts if ctx.get("team_id") == "ops")
+        assert team_context["is_agent"] is True
+        assert team_context["preferred_model"] == "gpt-4o"
+    finally:
+        if mem._retention_scheduler:
+            mem._retention_scheduler.stop()
+
+
+def test_chat_history_defaults_last_edited_by_model(tmp_path):
+    db_url = f"sqlite:///{tmp_path/'chat_defaults.db'}"
+    mem = Memoria(database_connect=db_url, enable_short_term=False)
+    try:
+        timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+        mem.db_manager.store_chat_history(
+            chat_id="chat-default",
+            user_input="hello",
+            ai_output="hi there",
+            timestamp=timestamp,
+            session_id="session-1",
+            model="gpt-4o-mini",
+            namespace="default",
+            metadata={"source": "unit-test"},
+            last_edited_by_model=None,
+        )
+
+        with mem.db_manager.SessionLocal() as session:
+            record = (
+                session.query(ChatHistory)
+                .filter(ChatHistory.chat_id == "chat-default")
+                .one()
+            )
+            assert record.last_edited_by_model == "gpt-4o-mini"
+    finally:
+        if mem._retention_scheduler:
+            mem._retention_scheduler.stop()
+
+
+def test_set_team_members_preserves_metadata_on_partial_updates(tmp_path):
+    db_url = f"sqlite:///{tmp_path/'team_partial_updates.db'}"
+    mem = Memoria(
+        database_connect=db_url,
+        enable_short_term=False,
+        user_id="agent-1",
+        team_memory_enabled=True,
+        team_enforce_membership=True,
+    )
+
+    try:
+        service = mem.storage_service
+        service.register_team_space(
+            "atlas",
+            members=[
+                {
+                    "user_id": "agent-1",
+                    "is_agent": True,
+                    "preferred_model": "gpt-4o",
+                }
+            ],
+            admins=[
+                {
+                    "user_id": "lead",
+                    "preferred_model": "claude-3-sonnet",
+                }
+            ],
+            share_by_default=True,
+        )
+
+        service.set_team_members("atlas", members=["agent-1"])
+
+        snapshot = service.require_team_access("atlas", "agent-1")
+        assert snapshot.member_metadata["agent-1"].is_agent is True
+        assert (
+            snapshot.member_metadata["lead"].preferred_model
+            == "claude-3-sonnet"
+        )
+
+        service.set_team_members("atlas", admins=["lead"])
+
+        refreshed = service.require_team_access("atlas", "lead")
+        assert refreshed.member_metadata["agent-1"].is_agent is True
+        assert (
+            refreshed.member_metadata["lead"].preferred_model
+            == "claude-3-sonnet"
+        )
+    finally:
+        if mem._retention_scheduler:
+            mem._retention_scheduler.stop()
+
+
 def test_workspace_access_control_and_sync_events(tmp_path):
     db_url = f"sqlite:///{tmp_path/'workspace_access.db'}"
     mem = Memoria(
@@ -1294,6 +1405,34 @@ def test_workspace_memory_isolation_across_sync(tmp_path):
 
             namespaces = {row.namespace for row in session.query(LongTermMemory).all()}
             assert namespaces == {"workspace:atlas", "workspace:zenith"}
+    finally:
+        if mem._retention_scheduler:
+            mem._retention_scheduler.stop()
+
+
+def test_store_memory_records_last_edited_by_model(tmp_path):
+    db_url = f"sqlite:///{tmp_path/'provenance.db'}"
+    mem = Memoria(
+        database_connect=db_url,
+        enable_short_term=False,
+        user_id="author",
+        team_memory_enabled=False,
+    )
+    try:
+        mem.storage_service.namespace = mem.namespace
+        memory_id = mem.storage_service.store_memory(
+            anchor="audit",
+            text="provenance tracking",
+            tokens=3,
+            last_edited_by_model="gpt-4o-mini",
+        )
+        with mem.db_manager.SessionLocal() as session:
+            record = (
+                session.query(LongTermMemory)
+                .filter(LongTermMemory.memory_id == memory_id)
+                .one()
+            )
+            assert record.last_edited_by_model == "gpt-4o-mini"
     finally:
         if mem._retention_scheduler:
             mem._retention_scheduler.stop()

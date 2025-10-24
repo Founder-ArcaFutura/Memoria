@@ -170,6 +170,7 @@ class DatabaseManager:
                     user_input TEXT NOT NULL,
                     ai_output TEXT NOT NULL,
                     model TEXT NOT NULL,
+                    last_edited_by_model TEXT,
                     timestamp TIMESTAMP NOT NULL,
                     session_id TEXT NOT NULL,
                     namespace TEXT NOT NULL DEFAULT 'default',
@@ -195,7 +196,8 @@ class DatabaseManager:
                     last_accessed TIMESTAMP,
                     searchable_content TEXT NOT NULL,
                     summary TEXT NOT NULL,
-                    embedding JSON
+                    embedding JSON,
+                    last_edited_by_model TEXT
                 )
             """
             )
@@ -225,6 +227,7 @@ class DatabaseManager:
                     topic TEXT,
                     entities_json TEXT DEFAULT '[]',
                     keywords_json TEXT DEFAULT '[]',
+                    last_edited_by_model TEXT,
                     is_user_context BOOLEAN DEFAULT 0,
                     is_preference BOOLEAN DEFAULT 0,
                     is_skill_knowledge BOOLEAN DEFAULT 0,
@@ -274,6 +277,7 @@ class DatabaseManager:
         namespace: str = "default",
         tokens_used: int = 0,
         metadata: dict[str, Any] | None = None,
+        last_edited_by_model: str | None = None,
     ):
         """Store chat history with input validation"""
         try:
@@ -290,6 +294,7 @@ class DatabaseManager:
                     "namespace": namespace,
                     "tokens_used": max(0, int(tokens_used)) if tokens_used else 0,
                     "metadata": metadata or {},
+                    "last_edited_by_model": last_edited_by_model or model,
                 },
             )
         except (ValidationError, ValueError) as e:
@@ -301,14 +306,15 @@ class DatabaseManager:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO chat_history
-                (chat_id, user_input, ai_output, model, timestamp, session_id, namespace, tokens_used, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (chat_id, user_input, ai_output, model, last_edited_by_model, timestamp, session_id, namespace, tokens_used, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     validated_data["chat_id"],
                     validated_data["user_input"],
                     validated_data["ai_output"],
                     validated_data["model"],
+                    validated_data["last_edited_by_model"],
                     validated_data["timestamp"],
                     validated_data["session_id"],
                     validated_data["namespace"],
@@ -378,7 +384,12 @@ class DatabaseManager:
             return result
 
     def store_long_term_memory_enhanced(
-        self, memory: ProcessedLongTermMemory, chat_id: str, namespace: str = "default"
+        self,
+        memory: ProcessedLongTermMemory,
+        chat_id: str,
+        namespace: str = "default",
+        *,
+        last_edited_by_model: str | None = None,
     ) -> str:
         """Store a ProcessedLongTermMemory with enhanced schema using transactions"""
         try:
@@ -399,11 +410,11 @@ class DatabaseManager:
                     INSERT INTO long_term_memory (
                         memory_id, original_chat_id, processed_data, importance_score, category_primary,
                         retention_type, namespace, timestamp, created_at, searchable_content, summary,
-                        novelty_score, relevance_score, actionability_score, x_coord, y_coord, z_coord, symbolic_anchors,
+                        last_edited_by_model, novelty_score, relevance_score, actionability_score, x_coord, y_coord, z_coord, symbolic_anchors,
                         classification, memory_importance, topic, entities_json, keywords_json, is_user_context, is_preference, is_skill_knowledge,
                         is_current_project, promotion_eligible, duplicate_of, supersedes_json, related_memories_json,
                         confidence_score, extraction_timestamp, classification_reason, processed_for_duplicates, conscious_processed
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 params=[
                     memory_id,
@@ -417,6 +428,7 @@ class DatabaseManager:
                     now_iso,
                     memory.content,
                     memory.summary,
+                    last_edited_by_model,
                     0.5,
                     0.5,
                     0.5,  # novelty, relevance, actionability scores
@@ -479,6 +491,8 @@ class DatabaseManager:
         memory: ProcessedMemory,
         chat_id: str,
         namespace: str,
+        *,
+        last_edited_by_model: str | None = None,
     ):
         """Store memory in short-term table"""
         # Ensure we have a valid timestamp (timezone-naive for SQLite compatibility)
@@ -496,8 +510,8 @@ class DatabaseManager:
             INSERT INTO short_term_memory
             (memory_id, chat_id, processed_data, importance_score, category_primary,
              retention_type, namespace, created_at, expires_at, access_count,
-             searchable_content, summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             searchable_content, summary, last_edited_by_model)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 memory_id,
@@ -512,6 +526,7 @@ class DatabaseManager:
                 0,
                 memory.searchable_content,
                 memory.summary,
+                last_edited_by_model,
             ),
         )
 
@@ -522,6 +537,8 @@ class DatabaseManager:
         memory: ProcessedMemory,
         chat_id: str,
         namespace: str,
+        *,
+        last_edited_by_model: str | None = None,
     ):
         """Store memory in long-term table"""
         # Ensure we have a valid timestamp (timezone-naive for SQLite compatibility)
@@ -537,8 +554,8 @@ class DatabaseManager:
             INSERT INTO long_term_memory
             (memory_id, original_chat_id, processed_data, importance_score, category_primary,
              retention_type, namespace, timestamp, created_at, access_count, searchable_content, summary,
-             novelty_score, relevance_score, actionability_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             last_edited_by_model, novelty_score, relevance_score, actionability_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 memory_id,
@@ -553,6 +570,7 @@ class DatabaseManager:
                 0,
                 memory.searchable_content,
                 memory.summary,
+                last_edited_by_model,
                 memory.importance.novelty_score,
                 memory.importance.relevance_score,
                 memory.importance.actionability_score,

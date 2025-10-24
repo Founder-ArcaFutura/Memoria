@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS workspace_members (
     user_id VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL DEFAULT 'member',
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    is_agent BOOLEAN NOT NULL DEFAULT FALSE,
+    preferred_model VARCHAR(255),
+    last_edited_by_model VARCHAR(255),
     joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (workspace_id) REFERENCES workspaces (workspace_id) ON DELETE CASCADE,
@@ -68,6 +71,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     user_input TEXT NOT NULL,
     ai_output TEXT NOT NULL,
     model VARCHAR(255) NOT NULL,
+    last_edited_by_model VARCHAR(255),
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     session_id VARCHAR(255) NOT NULL,
     namespace VARCHAR(255) NOT NULL DEFAULT 'default',
@@ -100,6 +104,7 @@ CREATE TABLE IF NOT EXISTS short_term_memory (
     z_coord DECIMAL(10,2),
     symbolic_anchors JSON,
     embedding JSON,
+    last_edited_by_model VARCHAR(255),
     team_id VARCHAR(255),
     workspace_id VARCHAR(255),
     INDEX idx_chat_id (chat_id),
@@ -126,6 +131,7 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
     novelty_score DECIMAL(3,2) DEFAULT 0.5,
     relevance_score DECIMAL(3,2) DEFAULT 0.5,
     actionability_score DECIMAL(3,2) DEFAULT 0.5,
+    last_edited_by_model VARCHAR(255),
 
     -- Enhanced Classification Fields
     classification VARCHAR(50) NOT NULL DEFAULT 'conversational',

@@ -741,6 +741,7 @@ class SQLAlchemyDatabaseManager:
         *,
         team_id: str | None = None,
         workspace_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ):
         """Store chat history.
 
@@ -758,6 +759,8 @@ class SQLAlchemyDatabaseManager:
         """
         if model is None:
             model = self._get_settings().agents.default_model
+        if last_edited_by_model is None:
+            last_edited_by_model = model
         with self.SessionLocal() as session:
             try:
                 chat_history = ChatHistory(
@@ -767,6 +770,7 @@ class SQLAlchemyDatabaseManager:
                     timestamp=timestamp,
                     session_id=session_id,
                     model=model,
+                    last_edited_by_model=last_edited_by_model,
                     namespace=namespace,
                     team_id=team_id,
                     workspace_id=workspace_id,
@@ -817,6 +821,7 @@ class SQLAlchemyDatabaseManager:
                         "user_input": result.user_input,
                         "ai_output": result.ai_output,
                         "model": result.model,
+                        "last_edited_by_model": result.last_edited_by_model,
                         "timestamp": result.timestamp,
                         "session_id": result.session_id,
                         "namespace": result.namespace,
@@ -979,6 +984,7 @@ class SQLAlchemyDatabaseManager:
         team_id: str | None = None,
         workspace_id: str | None = None,
         memory_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> str:
         """Store a ProcessedLongTermMemory with enhanced schema"""
         memory_id = memory_id or str(uuid.uuid4())
@@ -1056,6 +1062,7 @@ class SQLAlchemyDatabaseManager:
                     processed_for_duplicates=False,
                     conscious_processed=False,
                     documents_json=documents_payload,
+                    last_edited_by_model=last_edited_by_model,
                 )
 
                 session.add(long_term_memory)
@@ -1084,6 +1091,7 @@ class SQLAlchemyDatabaseManager:
             | None
         ) = None,
         memory_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> str:
         """Persist long-term memory while allowing direct document payload injection."""
 
@@ -1124,6 +1132,7 @@ class SQLAlchemyDatabaseManager:
             team_id=team_id,
             workspace_id=workspace_id,
             memory_id=memory_id,
+            last_edited_by_model=last_edited_by_model,
         )
 
     def store_memory_links(
@@ -1195,6 +1204,7 @@ class SQLAlchemyDatabaseManager:
         *,
         team_id: str | None = None,
         workspace_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> str:
         """Store a short-term memory row based on processed long-term memory data."""
 
@@ -1255,6 +1265,7 @@ class SQLAlchemyDatabaseManager:
                     z_coord=memory.z_coord,
                     symbolic_anchors=memory.symbolic_anchors,
                     embedding=embedding,
+                    last_edited_by_model=last_edited_by_model,
                 )
 
                 session.add(short_term_memory)
@@ -1283,6 +1294,7 @@ class SQLAlchemyDatabaseManager:
         expires_in_days: int = 7,
         team_id: str | None = None,
         workspace_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> str:
         """Store a manual short-term memory without requiring processing metadata."""
 
@@ -1318,6 +1330,7 @@ class SQLAlchemyDatabaseManager:
                     z_coord=z_coord,
                     symbolic_anchors=anchors,
                     embedding=embedding,
+                    last_edited_by_model=last_edited_by_model,
                 )
 
                 session.add(short_term_memory)

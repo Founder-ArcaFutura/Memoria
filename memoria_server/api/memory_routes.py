@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from flask import Blueprint, jsonify, request, current_app
-from typing import Any
+from typing import Any, Mapping
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
@@ -117,6 +117,59 @@ def _normalize_identifier_list(value: Any) -> list[str] | None:
     return None
 
 
+def _normalize_member_mapping(value: Mapping[str, Any]) -> dict[str, Any] | None:
+    user_value = value.get("user_id") or value.get("id") or value.get("user")
+    user_id = _coerce_identifier(user_value)
+    if not user_id:
+        return None
+    payload: dict[str, Any] = {"user_id": user_id}
+    if "is_agent" in value:
+        payload["is_agent"] = bool(value.get("is_agent", False))
+    preferred_value = value.get("preferred_model")
+    if preferred_value is not None:
+        if isinstance(preferred_value, str):
+            preferred_clean = preferred_value.strip()
+        else:
+            preferred_clean = str(preferred_value).strip()
+        if preferred_clean:
+            payload["preferred_model"] = preferred_clean
+    model_value = value.get("last_edited_by_model")
+    if model_value is not None:
+        if isinstance(model_value, str):
+            model_clean = model_value.strip()
+        else:
+            model_clean = str(model_value).strip()
+        if model_clean:
+            payload["last_edited_by_model"] = model_clean
+    return payload
+
+
+def _normalize_member_entries(
+    value: Any,
+) -> list[str | dict[str, Any]] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else []
+    if isinstance(value, Mapping):
+        payload = _normalize_member_mapping(value)
+        return [payload] if payload else []
+    if isinstance(value, (list, tuple, set)):
+        results: list[str | dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, str):
+                cleaned = item.strip()
+                if cleaned:
+                    results.append(cleaned)
+            elif isinstance(item, Mapping):
+                payload = _normalize_member_mapping(item)
+                if payload:
+                    results.append(payload)
+        return results
+    return None
+
+
 def _team_error(message: str, status: int = 400):
     return jsonify({"status": "error", "message": message}), status
 
@@ -152,6 +205,7 @@ def store_memory():
         share_param = data.pop("share_with_team", None)
         target_namespace = data.pop("namespace", None)
         ingest_mode_value = data.pop("ingest_mode", None)
+        edited_by_model = _coerce_identifier(data.pop("last_edited_by_model", None))
         team_id = _coerce_identifier(team_id)
         workspace_id = _coerce_identifier(workspace_id)
         if team_id is None:
@@ -214,6 +268,7 @@ def store_memory():
                 share_with_team=share_with_team,
                 workspace_id=workspace_id,
                 ingest_mode=requested_mode or IngestMode.PERSONAL,
+                last_edited_by_model=edited_by_model,
             )
             return jsonify(result)
 
@@ -237,6 +292,7 @@ def store_memory():
             share_with_team=share_with_team,
             workspace_id=workspace_id,
             ingest_mode=requested_mode,
+            last_edited_by_model=edited_by_model,
         )
 
         print(
@@ -342,8 +398,8 @@ def create_or_update_team_space():
         return _team_error("team_id is required", 400)
 
     include_members = bool(_coerce_optional_bool(payload.get("include_members")))
-    members = _normalize_identifier_list(payload.get("members"))
-    admins = _normalize_identifier_list(payload.get("admins"))
+    members = _normalize_member_entries(payload.get("members"))
+    admins = _normalize_member_entries(payload.get("admins"))
     share_by_default = _coerce_optional_bool(payload.get("share_by_default"))
     metadata = payload.get("metadata")
     if metadata is not None and not isinstance(metadata, dict):
@@ -389,7 +445,7 @@ def add_team_members(team_id: str):
         return _team_error("Memoria not configured", 503)
 
     payload = request.get_json(silent=True) or {}
-    members = _normalize_identifier_list(payload.get("members")) or []
+    members = _normalize_member_entries(payload.get("members")) or []
     if not members:
         return _team_error("members must include at least one identifier", 400)
 
@@ -425,12 +481,12 @@ def set_team_members(team_id: str):
     members_raw = payload.get("members", _MISSING)
     admins_raw = payload.get("admins", _MISSING)
     members = (
-        _normalize_identifier_list(members_raw)
+        _normalize_member_entries(members_raw)
         if members_raw is not _MISSING
         else None
     )
     admins = (
-        _normalize_identifier_list(admins_raw)
+        _normalize_member_entries(admins_raw)
         if admins_raw is not _MISSING
         else None
     )
@@ -514,10 +570,13 @@ def list_accessible_namespaces():
         return _team_error("Memoria not configured", 503)
 
     try:
-        namespaces = sorted(memoria.get_accessible_namespaces())
+        contexts = memoria.get_accessible_contexts()
+        namespaces = sorted(
+            {ctx["namespace"] for ctx in contexts if ctx.get("namespace")}
+        )
     except MemoriaError as exc:
         return _team_error(str(exc))
-    return jsonify({"status": "ok", "namespaces": namespaces})
+    return jsonify({"status": "ok", "namespaces": namespaces, "contexts": contexts})
 
 
 @memory_bp.route("/memory/workspaces", methods=["GET"])
@@ -549,8 +608,8 @@ def create_or_update_workspace():
         return _team_error("workspace_id is required", 400)
 
     include_members = bool(_coerce_optional_bool(payload.get("include_members")))
-    members = _normalize_identifier_list(payload.get("members"))
-    admins = _normalize_identifier_list(payload.get("admins"))
+    members = _normalize_member_entries(payload.get("members"))
+    admins = _normalize_member_entries(payload.get("admins"))
     share_by_default = _coerce_optional_bool(payload.get("share_by_default"))
     metadata = payload.get("metadata")
     if metadata is not None and not isinstance(metadata, dict):
@@ -600,7 +659,7 @@ def add_workspace_members(workspace_id: str):
     payload = request.get_json(silent=True) or {}
     include_members = bool(_coerce_optional_bool(payload.get("include_members")))
     as_admin = bool(_coerce_optional_bool(payload.get("as_admin")))
-    members = _normalize_identifier_list(payload.get("members"))
+    members = _normalize_member_entries(payload.get("members"))
     if not members:
         return _team_error("members must include at least one identifier", 400)
 
@@ -624,8 +683,8 @@ def set_workspace_members(workspace_id: str):
 
     payload = request.get_json(silent=True) or {}
     include_members = bool(_coerce_optional_bool(payload.get("include_members")))
-    members = _normalize_identifier_list(payload.get("members"))
-    admins = _normalize_identifier_list(payload.get("admins"))
+    members = _normalize_member_entries(payload.get("members"))
+    admins = _normalize_member_entries(payload.get("admins"))
 
     try:
         workspace = memoria.set_workspace_members(

@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS workspace_members (
     user_id TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'member',
     is_admin BOOLEAN NOT NULL DEFAULT 0,
+    is_agent BOOLEAN NOT NULL DEFAULT 0,
+    preferred_model TEXT,
+    last_edited_by_model TEXT,
     joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (workspace_id) REFERENCES workspaces (workspace_id) ON DELETE CASCADE,
@@ -45,6 +48,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     user_input TEXT NOT NULL,
     ai_output TEXT NOT NULL,
     model TEXT NOT NULL,
+    last_edited_by_model TEXT,
     timestamp TIMESTAMP NOT NULL,
     session_id TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT 'default',
@@ -79,6 +83,7 @@ CREATE TABLE IF NOT EXISTS short_term_memory (
     z_coord REAL,
     symbolic_anchors JSON,
     embedding JSON,
+    last_edited_by_model TEXT,
     team_id TEXT,
     workspace_id TEXT,
     FOREIGN KEY (chat_id) REFERENCES chat_history (chat_id),
@@ -112,6 +117,7 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
     topic TEXT,  -- Main topic/subject
     entities_json TEXT DEFAULT '[]',  -- JSON array of extracted entities
     keywords_json TEXT DEFAULT '[]',  -- JSON array of keywords for search
+    last_edited_by_model TEXT,
     
     -- Conscious Context Flags
     is_user_context BOOLEAN DEFAULT 0,  -- Contains user personal info

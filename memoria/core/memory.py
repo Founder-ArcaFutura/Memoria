@@ -1571,6 +1571,7 @@ class Memoria:
             model=response_model,
             namespace=self.namespace,
             metadata=metadata or {},
+            last_edited_by_model=response_model,
         )
 
         # Always process into long-term memory when memory agent is available
@@ -2110,6 +2111,7 @@ class Memoria:
             metadata={"auto_generated": True},
             team_id=team_id,
             workspace_id=workspace_id,
+            last_edited_by_model="auto-generated",
         )
 
     def _prepare_team_context(
@@ -2334,6 +2336,26 @@ class Memoria:
             admins = list(getattr(space, "admins", []) or [])
             payload["members"] = sorted(members)
             payload["admins"] = sorted(admins)
+            member_metadata = getattr(space, "member_metadata", {}) or {}
+            if member_metadata:
+                profiles: list[dict[str, Any]] = []
+                for user_id, profile in sorted(member_metadata.items()):
+                    role: str | None
+                    if user_id in admins:
+                        role = "admin"
+                    elif user_id in members:
+                        role = "member"
+                    else:
+                        role = None
+                    if hasattr(profile, "to_dict"):
+                        serialised = profile.to_dict(role=role)
+                    else:
+                        serialised = dict(profile)
+                        if role:
+                            serialised.setdefault("role", role)
+                    serialised.setdefault("user_id", user_id)
+                    profiles.append(serialised)
+                payload["member_profiles"] = profiles
         return payload
 
     def store_personal_memory(
@@ -2438,6 +2460,7 @@ class Memoria:
         documents: Sequence[PersonalMemoryDocument | Mapping[str, Any]] | None = None,
         ingest_mode: IngestMode | str | None = None,
         workspace_id: str | None = None,
+        last_edited_by_model: str | None = None,
     ) -> str | dict[str, Any]:
         """Stage a manual memory and promote it when heuristics approve."""
 
@@ -2510,6 +2533,7 @@ class Memoria:
             user_id=self.user_id,
             share_with_team=resolved_share,
             workspace_id=target_workspace,
+            last_edited_by_model=last_edited_by_model,
         )
 
         decision = score_staged_memory(
@@ -2575,6 +2599,7 @@ class Memoria:
                 staged.chat_id,
                 staged.namespace,
                 workspace_id=target_workspace,
+                last_edited_by_model=last_edited_by_model,
             )
 
             if long_term_id:
@@ -2645,6 +2670,7 @@ class Memoria:
         if not include_members:
             workspace_payload.pop("members", None)
             workspace_payload.pop("admins", None)
+            workspace_payload.pop("member_profiles", None)
         return workspace_payload
 
     def register_team_space(
@@ -2653,8 +2679,8 @@ class Memoria:
         *,
         namespace: str | None = None,
         display_name: str | None = None,
-        members: Sequence[str] | None = None,
-        admins: Sequence[str] | None = None,
+        members: Sequence[str | Mapping[str, Any]] | None = None,
+        admins: Sequence[str | Mapping[str, Any]] | None = None,
         share_by_default: bool | None = None,
         metadata: Mapping[str, Any] | None = None,
         include_members: bool = True,
@@ -2681,8 +2707,8 @@ class Memoria:
         *,
         namespace: str | None = None,
         display_name: str | None = None,
-        members: Sequence[str] | None = None,
-        admins: Sequence[str] | None = None,
+        members: Sequence[str | Mapping[str, Any]] | None = None,
+        admins: Sequence[str | Mapping[str, Any]] | None = None,
         share_by_default: bool | None = None,
         metadata: Mapping[str, Any] | None = None,
         include_members: bool = True,
@@ -2728,8 +2754,8 @@ class Memoria:
         self,
         workspace_id: str,
         *,
-        members: Sequence[str] | None = None,
-        admins: Sequence[str] | None = None,
+        members: Sequence[str | Mapping[str, Any]] | None = None,
+        admins: Sequence[str | Mapping[str, Any]] | None = None,
         include_members: bool = True,
     ) -> dict[str, Any]:
         """Replace workspace member/admin rosters (team alias)."""
@@ -2747,7 +2773,7 @@ class Memoria:
     def add_workspace_members(
         self,
         workspace_id: str,
-        members: Sequence[str],
+        members: Sequence[str | Mapping[str, Any]],
         *,
         as_admin: bool = False,
         include_members: bool = True,
@@ -2767,16 +2793,21 @@ class Memoria:
     def add_workspace_member(
         self,
         workspace_id: str,
-        user_id: str,
+        user: str | Mapping[str, Any],
         *,
         as_admin: bool = False,
         include_members: bool = True,
     ) -> dict[str, Any]:
         """Add a single member to a workspace (team alias)."""
 
+        payload: Sequence[str | Mapping[str, Any]]
+        if isinstance(user, Mapping):
+            payload = [user]
+        else:
+            payload = [user]
         return self.add_workspace_members(
             workspace_id,
-            [user_id],
+            payload,
             as_admin=as_admin,
             include_members=include_members,
         )
@@ -2836,8 +2867,8 @@ class Memoria:
         self,
         team_id: str,
         *,
-        members: Sequence[str] | None = None,
-        admins: Sequence[str] | None = None,
+        members: Sequence[str | Mapping[str, Any]] | None = None,
+        admins: Sequence[str | Mapping[str, Any]] | None = None,
         include_members: bool = True,
     ) -> dict[str, Any]:
         self._ensure_team_memory_enabled()
@@ -2849,7 +2880,7 @@ class Memoria:
     def add_team_members(
         self,
         team_id: str,
-        members: Sequence[str],
+        members: Sequence[str | Mapping[str, Any]],
         *,
         as_admin: bool = False,
         include_members: bool = True,
@@ -2863,13 +2894,18 @@ class Memoria:
     def add_team_member(
         self,
         team_id: str,
-        user_id: str,
+        user: str | Mapping[str, Any],
         *,
         as_admin: bool = False,
         include_members: bool = True,
     ) -> dict[str, Any]:
+        payload: Sequence[str | Mapping[str, Any]]
+        if isinstance(user, Mapping):
+            payload = [user]
+        else:
+            payload = [user]
         return self.add_team_members(
-            team_id, [user_id], as_admin=as_admin, include_members=include_members
+            team_id, payload, as_admin=as_admin, include_members=include_members
         )
 
     def remove_team_member(
@@ -2907,7 +2943,25 @@ class Memoria:
     def get_accessible_namespaces(self) -> set[str]:
         if not self.team_memory_enabled:
             return {self.namespace}
-        return self.storage_service.get_accessible_namespaces(self.user_id)
+        return {
+            context["namespace"]
+            for context in self.storage_service.get_accessible_contexts(self.user_id)
+            if context.get("namespace")
+        }
+
+    def get_accessible_contexts(self) -> list[dict[str, Any]]:
+        if not self.team_memory_enabled:
+            return [
+                {
+                    "namespace": self.namespace,
+                    "context_type": "personal",
+                    "user_id": self.user_id,
+                    "is_agent": False,
+                    "preferred_model": None,
+                    "last_edited_by_model": None,
+                }
+            ]
+        return self.storage_service.get_accessible_contexts(self.user_id)
 
     def _record_ingestion_results(self, results: list[dict[str, Any]]) -> None:
         self._last_ingestion_report = list(results)
@@ -3061,6 +3115,7 @@ class Memoria:
             namespace=self.namespace,
             tokens_used=total_tokens,
             metadata=chat_metadata,
+            last_edited_by_model=self.default_model,
         )
 
         self.storage_service.store_thread(
