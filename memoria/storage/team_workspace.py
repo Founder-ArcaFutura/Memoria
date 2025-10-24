@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +21,8 @@ class TeamSpace:
     metadata: dict[str, Any] = field(default_factory=dict)
     members: set[str] = field(default_factory=set)
     admins: set[str] = field(default_factory=set)
+    agent_members: set[str] = field(default_factory=set)
+    agent_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def iter_members(self, include_admins: bool = True) -> set[str]:
         """Return a copy of the member identifiers for this team."""
@@ -28,6 +30,7 @@ class TeamSpace:
         people: set[str] = {member for member in self.members if member}
         if include_admins:
             people.update({admin for admin in self.admins if admin})
+        people.update({agent for agent in self.agent_members if agent})
         return people
 
     def is_member(self, user_id: str | None) -> bool:
@@ -36,6 +39,8 @@ class TeamSpace:
         if user_id is None:
             return False
         if user_id in self.admins:
+            return True
+        if user_id in self.agent_members:
             return True
         return user_id in self.members
 
@@ -52,6 +57,9 @@ class TeamSpace:
         if include_members:
             payload["members"] = sorted(self.members)
             payload["admins"] = sorted(self.admins)
+            payload["agents"] = sorted(self.agent_members)
+            if self.agent_profiles:
+                payload["agent_profiles"] = copy.deepcopy(self.agent_profiles)
         return payload
 
 
@@ -68,6 +76,8 @@ class WorkspaceContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     members: set[str] = field(default_factory=set)
     admins: set[str] = field(default_factory=set)
+    agents: set[str] = field(default_factory=set)
+    agent_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def iter_members(self, include_admins: bool = True) -> set[str]:
         """Return identifiers for members and optionally admins."""
@@ -75,6 +85,7 @@ class WorkspaceContext:
         people: set[str] = {member for member in self.members if member}
         if include_admins:
             people.update({admin for admin in self.admins if admin})
+        people.update({agent for agent in self.agents if agent})
         return people
 
     def is_member(self, user_id: str | None) -> bool:
@@ -83,6 +94,8 @@ class WorkspaceContext:
         if user_id is None:
             return False
         if user_id in self.admins:
+            return True
+        if user_id in self.agents:
             return True
         return user_id in self.members
 
@@ -106,6 +119,10 @@ class WorkspaceContext:
             payload["admins"] = sorted(self.admins)
         if self.members:
             payload["members"] = sorted(self.members)
+        if self.agents:
+            payload["agents"] = sorted(self.agents)
+        if self.agent_profiles:
+            payload["agent_profiles"] = copy.deepcopy(self.agent_profiles)
         return payload
 
 
@@ -136,6 +153,8 @@ class TeamSpaceCache:
         *,
         members: Iterable[str] | None = None,
         admins: Iterable[str] | None = None,
+        agents: Iterable[str] | None = None,
+        agent_profiles: Mapping[str, dict[str, Any]] | None = None,
     ) -> TeamSpace:
         space = self._spaces.get(team_id)
         if space is None:
@@ -144,6 +163,12 @@ class TeamSpaceCache:
             space.members = set(members)
         if admins is not None:
             space.admins = set(admins)
+        if agents is not None:
+            space.agent_members = set(agents)
+        if agent_profiles is not None:
+            space.agent_profiles = {
+                key: dict(value) for key, value in agent_profiles.items()
+            }
         self._rebuild_member_index()
         return copy.deepcopy(space)
 
@@ -161,12 +186,33 @@ class TeamSpaceCache:
         self._rebuild_member_index()
         return copy.deepcopy(space)
 
+    def add_agents(
+        self,
+        team_id: str,
+        agents: Iterable[str],
+        *,
+        profiles: Mapping[str, dict[str, Any]] | None = None,
+    ) -> TeamSpace:
+        space = self._spaces.get(team_id)
+        if space is None:
+            raise MemoriaError(f"Unknown team: {team_id}")
+        additions = set(agents)
+        space.agent_members.update(additions)
+        if profiles:
+            for key, value in profiles.items():
+                space.agent_profiles[key] = dict(value)
+        self._rebuild_member_index()
+        return copy.deepcopy(space)
+
     def remove_member(self, team_id: str, user_id: str) -> TeamSpace:
         space = self._spaces.get(team_id)
         if space is None:
             raise MemoriaError(f"Unknown team: {team_id}")
         space.members.discard(user_id)
         space.admins.discard(user_id)
+        space.agent_members.discard(user_id)
+        if user_id in space.agent_profiles:
+            space.agent_profiles.pop(user_id, None)
         self._rebuild_member_index()
         return copy.deepcopy(space)
 

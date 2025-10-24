@@ -37,6 +37,7 @@ from ..utils.pydantic_models import (
 from . import migration
 from .auto_creator import DatabaseAutoCreator
 from .models import (
+    Agent,
     Base,
     ChatHistory,
     LinkMemoryThread,
@@ -741,6 +742,7 @@ class SQLAlchemyDatabaseManager:
         *,
         team_id: str | None = None,
         workspace_id: str | None = None,
+        edited_by_model: str | None = None,
     ):
         """Store chat history.
 
@@ -760,6 +762,8 @@ class SQLAlchemyDatabaseManager:
             model = self._get_settings().agents.default_model
         with self.SessionLocal() as session:
             try:
+                resolved_editor = edited_by_model or model or "human"
+
                 chat_history = ChatHistory(
                     chat_id=chat_id,
                     user_input=user_input,
@@ -772,6 +776,7 @@ class SQLAlchemyDatabaseManager:
                     workspace_id=workspace_id,
                     tokens_used=tokens_used,
                     metadata=metadata or {},
+                    last_edited_by_model=resolved_editor,
                 )
 
                 session.merge(chat_history)  # Use merge for INSERT OR REPLACE behavior
@@ -780,6 +785,79 @@ class SQLAlchemyDatabaseManager:
             except SQLAlchemyError as e:
                 session.rollback()
                 raise DatabaseError(f"Failed to store chat history: {e}")
+
+    # ------------------------------------------------------------------
+    # Agent registry helpers
+    # ------------------------------------------------------------------
+
+    def register_agent(
+        self,
+        agent_id: str,
+        *,
+        name: str | None = None,
+        role: str | None = None,
+        preferred_model: str | None = None,
+        is_agent: bool = True,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create or update an agent registry entry."""
+
+        if not agent_id or not str(agent_id).strip():
+            raise DatabaseError("Agent identifier must be provided")
+
+        with self.SessionLocal() as session:
+            try:
+                instance = session.get(Agent, agent_id)
+                if instance is None:
+                    instance = Agent(agent_id=str(agent_id).strip(), name=name or str(agent_id))
+                if name:
+                    instance.name = name
+                elif not instance.name:
+                    instance.name = str(agent_id)
+                instance.role = role
+                instance.preferred_model = preferred_model
+                instance.is_agent = bool(is_agent)
+                instance.metadata = dict(metadata or {})  # type: ignore[attr-defined]
+                session.add(instance)
+                session.commit()
+                session.refresh(instance)
+            except SQLAlchemyError as exc:
+                session.rollback()
+                raise DatabaseError(f"Failed to register agent: {exc}")
+
+        return self._serialise_agent(instance)
+
+    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
+        """Return a serialised agent record when present."""
+
+        if not agent_id or not str(agent_id).strip():
+            return None
+
+        with self.SessionLocal() as session:
+            instance = session.get(Agent, str(agent_id).strip())
+            return None if instance is None else self._serialise_agent(instance)
+
+    def list_agents(self) -> list[dict[str, Any]]:
+        """Return all registered agent profiles."""
+
+        with self.SessionLocal() as session:
+            records = session.query(Agent).all()
+            return [self._serialise_agent(record) for record in records]
+
+    @staticmethod
+    def _serialise_agent(agent: Agent) -> dict[str, Any]:
+        """Serialise an :class:`Agent` ORM instance into a dictionary."""
+
+        return {
+            "agent_id": agent.agent_id,
+            "name": agent.name,
+            "role": agent.role,
+            "preferred_model": agent.preferred_model,
+            "is_agent": agent.is_agent,
+            "metadata": getattr(agent, "metadata", {}) or {},
+            "created_at": agent.created_at,
+            "updated_at": agent.updated_at,
+        }
 
     def get_chat_history(
         self,
@@ -817,6 +895,7 @@ class SQLAlchemyDatabaseManager:
                         "user_input": result.user_input,
                         "ai_output": result.ai_output,
                         "model": result.model,
+                        "last_edited_by_model": result.last_edited_by_model,
                         "timestamp": result.timestamp,
                         "session_id": result.session_id,
                         "namespace": result.namespace,
@@ -979,6 +1058,7 @@ class SQLAlchemyDatabaseManager:
         team_id: str | None = None,
         workspace_id: str | None = None,
         memory_id: str | None = None,
+        edited_by_model: str | None = None,
     ) -> str:
         """Store a ProcessedLongTermMemory with enhanced schema"""
         memory_id = memory_id or str(uuid.uuid4())
@@ -1056,6 +1136,7 @@ class SQLAlchemyDatabaseManager:
                     processed_for_duplicates=False,
                     conscious_processed=False,
                     documents_json=documents_payload,
+                    last_edited_by_model=edited_by_model or "human",
                 )
 
                 session.add(long_term_memory)
@@ -1084,6 +1165,7 @@ class SQLAlchemyDatabaseManager:
             | None
         ) = None,
         memory_id: str | None = None,
+        edited_by_model: str | None = None,
     ) -> str:
         """Persist long-term memory while allowing direct document payload injection."""
 
@@ -1124,6 +1206,7 @@ class SQLAlchemyDatabaseManager:
             team_id=team_id,
             workspace_id=workspace_id,
             memory_id=memory_id,
+            edited_by_model=edited_by_model,
         )
 
     def store_memory_links(
@@ -1195,6 +1278,7 @@ class SQLAlchemyDatabaseManager:
         *,
         team_id: str | None = None,
         workspace_id: str | None = None,
+        edited_by_model: str | None = None,
     ) -> str:
         """Store a short-term memory row based on processed long-term memory data."""
 
@@ -1255,6 +1339,7 @@ class SQLAlchemyDatabaseManager:
                     z_coord=memory.z_coord,
                     symbolic_anchors=memory.symbolic_anchors,
                     embedding=embedding,
+                    last_edited_by_model=edited_by_model or "human",
                 )
 
                 session.add(short_term_memory)
@@ -1283,6 +1368,7 @@ class SQLAlchemyDatabaseManager:
         expires_in_days: int = 7,
         team_id: str | None = None,
         workspace_id: str | None = None,
+        edited_by_model: str | None = None,
     ) -> str:
         """Store a manual short-term memory without requiring processing metadata."""
 
@@ -1318,6 +1404,7 @@ class SQLAlchemyDatabaseManager:
                     z_coord=z_coord,
                     symbolic_anchors=anchors,
                     embedding=embedding,
+                    last_edited_by_model=edited_by_model or "human",
                 )
 
                 session.add(short_term_memory)
