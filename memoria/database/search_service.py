@@ -6,7 +6,7 @@ Provides cross-database full-text search capabilities.
 import json
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -407,6 +407,38 @@ class SearchService:
                 continue
             item["distance"] = math.sqrt((mx - x) ** 2 + (my - y) ** 2 + (mz - z) ** 2)
         return data
+
+    def _apply_image_metadata(self, item: dict[str, Any]) -> dict[str, Any]:
+        """Ensure search rows expose image metadata consistently."""
+
+        processed = item.get("processed_data")
+        images: Any = None
+        if isinstance(processed, str):
+            try:
+                processed = json.loads(processed)
+            except Exception:
+                processed = None
+        if isinstance(processed, Mapping):
+            images = processed.get("images")
+        elif isinstance(processed, Sequence) and not isinstance(processed, (str, bytes, bytearray)):
+            # processed data is a list; ignore
+            pass
+
+        if images is None:
+            candidate = item.get("image_assets_json")
+            if isinstance(candidate, str):
+                try:
+                    images = json.loads(candidate)
+                except Exception:
+                    images = None
+            elif candidate is not None:
+                images = candidate
+
+        includes_image = bool(item.get("includes_image") or images)
+        item["includes_image"] = includes_image
+        if images:
+            item["images"] = images
+        return item
 
     def _search_by_anchor(
         self,
@@ -1812,24 +1844,23 @@ class SearchService:
                 anchors_list = self._extract_symbolic_anchors(
                     getattr(row, "symbolic_anchors", None), data
                 )
-                rows.append(
-                    {
-                        "memory_id": row.memory_id,
-                        "memory_type": row.memory_type,
-                        "category_primary": row.category_primary,
-                        "processed_data": data,
-                        "importance_score": row.importance_score,
-                        "created_at": row.created_at,
-                        "x": row.x_coord,
-                        "y": row.y_coord,
-                        "z": row.z_coord,
-                        "summary": row.summary,
-                        "search_score": row.search_score,
-                        "search_strategy": row.search_strategy,
-                        "emotional_intensity": emotion,
-                        "symbolic_anchors": anchors_list,
-                    }
-                )
+                row_payload = {
+                    "memory_id": row.memory_id,
+                    "memory_type": row.memory_type,
+                    "category_primary": row.category_primary,
+                    "processed_data": data,
+                    "importance_score": row.importance_score,
+                    "created_at": row.created_at,
+                    "x": row.x_coord,
+                    "y": row.y_coord,
+                    "z": row.z_coord,
+                    "summary": row.summary,
+                    "search_score": row.search_score,
+                    "search_strategy": row.search_strategy,
+                    "emotional_intensity": emotion,
+                    "symbolic_anchors": anchors_list,
+                }
+                rows.append(self._apply_image_metadata(row_payload))
             return rows
 
         except Exception as e:
@@ -1880,7 +1911,7 @@ class SearchService:
                 row_dict.get("symbolic_anchors"),
                 row_dict.get("processed_data"),
             )
-            processed_rows.append(row_dict)
+            processed_rows.append(self._apply_image_metadata(row_dict))
 
         return processed_rows
 
@@ -2815,6 +2846,10 @@ class SearchService:
                     composite += vector_score * vector_weight
             result["vector_score"] = vector_score
             result["composite_score"] = composite
+
+        for result in results:
+            if isinstance(result, dict):
+                self._apply_image_metadata(result)
 
         # Sort by composite score and limit
         results.sort(key=lambda x: x.get("composite_score", 0), reverse=True)

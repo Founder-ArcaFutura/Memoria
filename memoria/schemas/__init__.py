@@ -4,6 +4,11 @@ import copy
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
+import base64
+import binascii
+import mimetypes
+import re
+from pathlib import Path
 from functools import lru_cache
 from importlib import resources
 from types import MappingProxyType
@@ -105,6 +110,28 @@ def canonicalize_symbolic_anchors(
     return cleaned
 
 
+_FILENAME_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def _safe_filename(candidate: str | None) -> str | None:
+    """Return a filesystem-safe filename preserving known extensions."""
+
+    if not candidate:
+        return None
+
+    name = Path(str(candidate)).name.strip()
+    if not name:
+        return None
+
+    stem, suffix = Path(name).stem, Path(name).suffix
+    safe_stem = _FILENAME_SANITIZER.sub("_", stem) or "asset"
+    safe_suffix = _FILENAME_SANITIZER.sub("", suffix)
+    if not safe_suffix and suffix:
+        # Preserve dot for previously sanitised suffixes
+        safe_suffix = suffix
+    return f"{safe_stem}{safe_suffix}" if safe_suffix else safe_stem
+
+
 class PersonalMemoryDocument(BaseModel):
     """Structured document metadata linked to a personal memory."""
 
@@ -176,6 +203,158 @@ class PersonalMemoryDocument(BaseModel):
             extra = "allow"
 
 
+class MemoryImageAsset(BaseModel):
+    """Structured metadata describing an image asset stored with a memory."""
+
+    image_id: str | None = Field(
+        default=None, description="Unique identifier for the stored image asset"
+    )
+    filename: str | None = Field(
+        default=None, description="Original filename associated with the image"
+    )
+    mime_type: str | None = Field(
+        default=None, description="Reported MIME type for the image content"
+    )
+    size_bytes: int | None = Field(
+        default=None, ge=0, description="Size of the stored file in bytes"
+    )
+    width: int | None = Field(
+        default=None, ge=1, description="Image width in pixels when available"
+    )
+    height: int | None = Field(
+        default=None, ge=1, description="Image height in pixels when available"
+    )
+    caption: str | None = Field(
+        default=None, description="Optional caption or alt-text for the image"
+    )
+    description: str | None = Field(
+        default=None, description="Optional free-form description or comment"
+    )
+    file_path: str | None = Field(
+        default=None,
+        description="Relative filesystem path where the image binary is stored",
+    )
+    created_at: datetime | None = Field(
+        default=None,
+        description="Timestamp indicating when the asset was persisted",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None, description="Arbitrary metadata about the image"
+    )
+    data: str | None = Field(
+        default=None,
+        description="Base64-encoded binary payload for new image uploads",
+    )
+    url: str | None = Field(
+        default=None,
+        description="Optional external URL pointing to the original image",
+    )
+
+    @validator("filename", pre=True)
+    def _normalise_filename(cls, value: Any) -> str | None:
+        if value in (None, "", b""):
+            return None
+        return _safe_filename(str(value))
+
+    @validator("mime_type", "caption", "description", "file_path", "url", pre=True)
+    def _strip_optional_strings(cls, value: Any) -> str | None:
+        if value in (None, "", b""):
+            return None
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="ignore")
+        text = str(value).strip()
+        return text or None
+
+    @validator("size_bytes", pre=True)
+    def _coerce_size(cls, value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            size = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("size_bytes must be an integer") from exc
+        if size < 0:
+            raise ValueError("size_bytes must be zero or greater")
+        return size
+
+    @validator("width", "height", pre=True)
+    def _coerce_dimensions(cls, value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Image dimensions must be integers") from exc
+        if numeric <= 0:
+            raise ValueError("Image dimensions must be positive integers")
+        return numeric
+
+    @validator("metadata", pre=True)
+    def _ensure_metadata_mapping(cls, value: Any) -> dict[str, Any] | None:
+        if value in (None, "", {}):
+            return None
+        if isinstance(value, Mapping):
+            return dict(value)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+                raise ValueError(
+                    "Image metadata must be valid JSON or a mapping"
+                ) from exc
+            if not isinstance(parsed, Mapping):
+                raise ValueError("Image metadata JSON must represent an object")
+            return dict(parsed)
+        raise TypeError("Image metadata must be a mapping or JSON object")
+
+    @validator("data", pre=True)
+    def _coerce_data(cls, value: Any) -> str | None:
+        if value in (None, "", b"", bytearray()):
+            return None
+        if isinstance(value, (bytes, bytearray)):
+            if not value:
+                return None
+            return base64.b64encode(bytes(value)).decode("ascii")
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                base64.b64decode(stripped, validate=True)
+            except binascii.Error as exc:
+                raise ValueError("Image data must be base64-encoded") from exc
+            return stripped
+        raise TypeError(
+            "Image data must be provided as base64-encoded string or bytes"
+        )
+
+    @root_validator(pre=True)
+    def _default_filename(cls, values: dict[str, Any]) -> dict[str, Any]:
+        filename = values.get("filename")
+        if not filename and values.get("url"):
+            candidate = str(values["url"]).rstrip("/").split("/")[-1]
+            values["filename"] = _safe_filename(candidate)
+        return values
+
+    @root_validator(pre=False)
+    def _default_mime(cls, values: dict[str, Any]) -> dict[str, Any]:
+        mime = values.get("mime_type")
+        if not mime:
+            filename = values.get("filename")
+            if filename:
+                guess, _ = mimetypes.guess_type(filename)
+                if guess:
+                    values["mime_type"] = guess
+        return values
+
+    if PYDANTIC_V2:
+        model_config = {"extra": "allow"}
+    else:  # pragma: no cover - exercised in Pydantic v1 environments
+
+        class Config:
+            extra = "allow"
+
+
 class MemoryEntry(BaseModel):
     """Schema for storing a memory entry with spatial and symbolic data."""
 
@@ -199,6 +378,10 @@ class MemoryEntry(BaseModel):
         description=Z_AXIS.description,
     )
     symbolic_anchors: list[str] | None = None
+    images: list["MemoryImageAsset"] | None = Field(
+        default=None,
+        description="Optional image assets associated with the memory",
+    )
 
     @root_validator(pre=True)
     def _canonicalize_symbolic_anchors(cls, values: dict[str, Any]) -> dict[str, Any]:
@@ -212,6 +395,22 @@ class MemoryEntry(BaseModel):
             mutable_values.get("symbolic_anchors")
         )
         return mutable_values
+
+    @validator("images", pre=True)
+    def _coerce_images(
+        cls, value: Any
+    ) -> list["MemoryImageAsset"] | None | list[dict[str, Any]]:
+        if value in (None, "", []):
+            return None
+        if isinstance(value, MemoryImageAsset):
+            return [value]
+        if isinstance(value, Mapping):
+            return [value]
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return list(value)
+        raise TypeError(
+            "images must be provided as a MemoryImageAsset, mapping, or sequence"
+        )
 
     @root_validator(pre=True)
     def _default_timestamp_and_x_coord(cls, values: dict[str, Any]) -> dict[str, Any]:
@@ -283,6 +482,10 @@ class PersonalMemoryEntry(MemoryEntry):
         default=None,
         description="Optional supporting documents captured during ingestion",
     )
+    images: list["MemoryImageAsset"] | None = Field(
+        default=None,
+        description="Optional image assets stored alongside the memory",
+    )
     metadata: dict[str, Any] | None = Field(
         default=None,
         description="Additional metadata describing the personal memory entry",
@@ -329,6 +532,22 @@ class PersonalMemoryEntry(MemoryEntry):
             return list(value)
         raise TypeError(
             "documents must be provided as a PersonalMemoryDocument, mapping, or sequence"
+        )
+
+    @validator("images", pre=True)
+    def _coerce_images(
+        cls, value: Any
+    ) -> list["MemoryImageAsset"] | None | list[dict[str, Any]]:
+        if value in (None, "", []):
+            return None
+        if isinstance(value, MemoryImageAsset):
+            return [value]
+        if isinstance(value, Mapping):
+            return [value]
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return list(value)
+        raise TypeError(
+            "images must be provided as a MemoryImageAsset, mapping, or sequence"
         )
 
     if PYDANTIC_V2:

@@ -26,6 +26,7 @@ class StagedManualMemory:
     z_coord: float | None
     symbolic_anchors: list[str]
     metadata: dict[str, Any] = field(default_factory=dict)
+    images: list[dict[str, Any]] | None = None
 
 
 @dataclass

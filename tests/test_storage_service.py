@@ -198,6 +198,50 @@ def test_store_memory_escalates_policy_violation(tmp_path):
             mem._ingestion_scheduler.stop()
 
 
+def test_store_memory_with_images(tmp_path):
+    mem = Memoria(
+        database_connect=f"sqlite:///{tmp_path/'images.db'}", enable_short_term=False
+    )
+    try:
+        image_root = tmp_path / "assets"
+        mem.storage_service._image_storage_root = image_root
+        image_root.mkdir(parents=True, exist_ok=True)
+
+        base64_pixel = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wIAAgMBAp+B7aEAAAAASUVORK5CYII="
+        )
+
+        result = mem.store_memory(
+            anchor="image-anchor",
+            text="memory containing an image",
+            tokens=5,
+            return_status=True,
+            images=[
+                {
+                    "filename": "pixel.png",
+                    "mime_type": "image/png",
+                    "data": base64_pixel,
+                    "caption": "single pixel",
+                }
+            ],
+        )
+
+        memory_id = result["memory_id"]
+        snapshot = mem.storage_service.get_memory_snapshot(memory_id, refresh=True)
+
+        assert snapshot["includes_image"] is True
+        images = snapshot.get("images")
+        assert images and images[0]["mime_type"] == "image/png"
+
+        stored_path = image_root / images[0]["file_path"]
+        assert stored_path.exists()
+    finally:
+        if mem._retention_scheduler:
+            mem._retention_scheduler.stop()
+        if mem._ingestion_scheduler:
+            mem._ingestion_scheduler.stop()
+
+
 def test_store_personal_memory_skips_short_term_and_records_spatial_metadata(tmp_path):
     mem = Memoria(database_connect=f"sqlite:///{tmp_path/'personal.db'}")
     try:

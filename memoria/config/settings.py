@@ -545,6 +545,10 @@ class MemorySettings(BaseModel):
             " provided explicitly."
         ),
     )
+    image_storage_path: str | None = Field(
+        default="memoria_images",
+        description="Filesystem path for storing persisted memory image assets",
+    )
 
     @validator("team_mode", pre=True)
     def _coerce_team_mode(cls, value: Any) -> TeamMode:
@@ -603,6 +607,17 @@ class MemorySettings(BaseModel):
     @validator("workspace_default_id", pre=True)
     def _clean_workspace_default_id(cls, value: Any) -> str | None:
         return cls._clean_team_default_id(value)
+
+    @validator("image_storage_path", pre=True)
+    def _normalise_image_storage_path(cls, value: Any) -> str | None:
+        if value in (None, "", b""):
+            return "memoria_images"
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="ignore")
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned or "memoria_images"
+        raise TypeError("image_storage_path must be a string or null")
 
     @validator("ingest_mode", pre=True)
     def _coerce_ingest_mode(cls, value: Any) -> IngestMode:

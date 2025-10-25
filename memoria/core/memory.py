@@ -60,6 +60,7 @@ from ..heuristics.retention import (
     RetentionPolicyRule,
 )
 from ..schemas import (
+    MemoryImageAsset,
     PersonalMemoryDocument,
     PersonalMemoryEntry,
     ThreadIngestion,
@@ -459,6 +460,11 @@ class Memoria:
         self.mem_prompt = mem_prompt
         memory_settings = getattr(settings, "memory", None)
         agent_settings = getattr(settings, "agents", None)
+        image_storage_path = (
+            getattr(memory_settings, "image_storage_path", None)
+            if memory_settings
+            else None
+        )
 
         config_ingest_mode = getattr(
             memory_settings, "ingest_mode", IngestMode.STANDARD
@@ -752,6 +758,7 @@ class Memoria:
             conscious_ingest=self.conscious_ingest,
             user_id=self.user_id,
             agent_id=self.agent_id,
+            image_storage_root=image_storage_path,
         )
         if self.agent_id and not self.agent_profile:
             self.agent_profile = self.storage_service.get_agent(self.agent_id)
@@ -2486,6 +2493,7 @@ class Memoria:
         team_id: str | None = None,
         share_with_team: bool | None = None,
         documents: Sequence[PersonalMemoryDocument | Mapping[str, Any]] | None = None,
+        images: Sequence[MemoryImageAsset | Mapping[str, Any]] | None = None,
         ingest_mode: IngestMode | str | None = None,
         workspace_id: str | None = None,
     ) -> str | dict[str, Any]:
@@ -2533,6 +2541,8 @@ class Memoria:
             }
             if documents is not None:
                 personal_payload["documents"] = list(documents)
+            if images is not None:
+                personal_payload["images"] = list(images)
 
             return self.store_personal_memory(
                 personal_payload,
@@ -2560,6 +2570,7 @@ class Memoria:
             user_id=self.user_id,
             share_with_team=resolved_share,
             workspace_id=target_workspace,
+            images=images,
         )
 
         decision = score_staged_memory(
@@ -2619,6 +2630,15 @@ class Memoria:
                 promotion_eligible=True,
                 extraction_timestamp=staged.timestamp,
             )
+
+            stored_images, _, manual_includes = self.storage_service.prepare_image_assets(
+                getattr(staged, "images", None),
+                namespace=staged.namespace,
+            )
+            if stored_images is not None:
+                processed_memory.images = stored_images
+            if manual_includes:
+                processed_memory.includes_image = True
 
             long_term_id = self.db_manager.store_long_term_memory_enhanced(
                 processed_memory,

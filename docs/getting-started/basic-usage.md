@@ -61,7 +61,23 @@ memoria.store_memory(
 )
 ```
 
-`store_memory` stages the entry, applies promotion heuristics, and—when approved—copies coordinates into long-term storage. Attach `metadata` or `user_priority` to influence promotion decisions.
+`store_memory` stages the entry, applies promotion heuristics, and—when approved—copies coordinates into long-term storage. Attach `metadata` or `user_priority` to influence promotion decisions. To capture screenshots or photos alongside the text, include an `images` list:
+
+```python
+memoria.store_memory(
+    anchor="architecture-whiteboard",
+    text="Snapshot of the Q4 analytics architecture diagram.",
+    tokens=13,
+    images=[{
+        "filename": "diagram.png",
+        "mime_type": "image/png",
+        "data": base64_encoded_png,
+        "caption": "Whiteboard sketch from 25 Oct",
+    }],
+)
+```
+
+Memoria writes the binary file to disk, records size and dimensions in `image_assets_json`, and flags the memory with `includes_image` so retrieval and search responses can surface the attachment.
 
 ## Retrieve context for agents
 

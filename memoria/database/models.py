@@ -263,6 +263,8 @@ class LongTermMemory(Base):
     symbolic_anchors = Column(JSON)
     embedding = Column(JSON)
     documents_json = Column(JSON)
+    image_assets_json = Column(JSON)
+    includes_image = Column(Boolean, nullable=False, default=False)
     team_id = Column(String(255), ForeignKey("teams.team_id", ondelete="SET NULL"))
     workspace_id = Column(
         String(255), ForeignKey("workspaces.workspace_id", ondelete="SET NULL")

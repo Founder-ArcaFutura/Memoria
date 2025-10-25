@@ -207,6 +207,7 @@ def store_memory():
                 chat_id=entry.chat_id,
                 metadata=entry.metadata,
                 documents=entry.documents,
+                images=entry.images,
                 promotion_weights=promotion_weights,
                 return_status=True,
                 namespace=target_namespace,
@@ -237,6 +238,7 @@ def store_memory():
             share_with_team=share_with_team,
             workspace_id=workspace_id,
             ingest_mode=requested_mode,
+            images=entry.images,
         )
 
         print(

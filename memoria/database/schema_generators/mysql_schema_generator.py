@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
     symbolic_anchors JSON,
     embedding JSON,
     documents_json JSON,
+    image_assets_json JSON,
+    includes_image BOOLEAN NOT NULL DEFAULT FALSE,
     team_id VARCHAR(255),
     workspace_id VARCHAR(255),
     FOREIGN KEY (team_id) REFERENCES teams (team_id) ON DELETE SET NULL,

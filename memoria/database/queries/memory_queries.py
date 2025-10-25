@@ -52,8 +52,9 @@ class MemoryQueries(BaseQueries):
             is_user_context, is_preference, is_skill_knowledge, is_current_project, promotion_eligible,
             duplicate_of, supersedes_json, related_memories_json,
             confidence_score, extraction_timestamp, classification_reason,
-            processed_for_duplicates, conscious_processed, documents_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            processed_for_duplicates, conscious_processed, documents_json,
+            image_assets_json, includes_image
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     INSERT_RULES_MEMORY = """

@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
     symbolic_anchors JSON,
     embedding JSON,
     documents_json JSON,
+    image_assets_json JSON,
+    includes_image BOOLEAN DEFAULT 0,
     team_id TEXT,
     workspace_id TEXT,
     FOREIGN KEY (team_id) REFERENCES teams (team_id) ON DELETE SET NULL,

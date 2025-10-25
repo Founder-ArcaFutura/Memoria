@@ -4,18 +4,30 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import copy
+import io
 import json
 import math
+import mimetypes
+import os
+import re
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Tuple, Type, TypeAlias
 from typing import cast as typing_cast
 
 from loguru import logger
 from pydantic import ValidationError
+
+try:  # Optional dependency for dimension detection
+    from PIL import Image  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - pillow is optional in many deployments
+    Image = None  # type: ignore[assignment]
 from sqlalchemy import (
     JSON,
     String,
@@ -68,6 +80,7 @@ from ..database.queries.memory_queries import MemoryQueries
 from ..database.sqlalchemy_manager import SQLAlchemyDatabaseManager as DatabaseManager
 from ..database.sqlite_utils import is_sqlite_json_error
 from ..schemas import (
+    MemoryImageAsset,
     PersonalMemoryDocument,
     PersonalMemoryEntry,
     canonicalize_symbolic_anchors,
@@ -101,6 +114,8 @@ class StorageService:
     AUTOGEN_AI_PLACEHOLDER = "[auto-generated ai output]"
     _TEAM_CACHE_SENTINEL = "<no-team>"
     _WORKSPACE_CACHE_SENTINEL = "<no-workspace>"
+    _IMAGE_FILENAME_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]+")
+    _IMAGE_NAMESPACE_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]+")
 
     def __init__(
         self,
@@ -114,6 +129,7 @@ class StorageService:
         workspace_id: str | None = None,
         user_id: str | None = None,
         agent_id: str | None = None,
+        image_storage_root: str | os.PathLike[str] | Path | None = None,
         policy_engine: PolicyEnforcementEngine | None = None,
 
     ) -> None:
@@ -149,6 +165,251 @@ class StorageService:
         self._agent_profiles: dict[str, dict[str, Any]] = {}
 
         self._refresh_agent_cache()
+
+        self._image_storage_root = self._initialise_image_storage(image_storage_root)
+
+    def _initialise_image_storage(
+        self, root: str | os.PathLike[str] | Path | None
+    ) -> Path:
+        """Ensure the on-disk image storage location exists and return it."""
+
+        if root is None:
+            candidate = Path("memoria_images")
+        else:
+            candidate = Path(root)
+
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:  # pragma: no cover - filesystem safeguards
+            raise MemoriaError(
+                f"Failed to initialise image storage directory '{candidate}': {exc}"
+            ) from exc
+
+        return candidate
+
+    def _normalise_namespace_for_media(self, namespace: str | None) -> str:
+        """Return a filesystem-safe namespace folder name."""
+
+        if namespace and isinstance(namespace, str):
+            cleaned = namespace.strip()
+        else:
+            cleaned = str(namespace or self.namespace or "default")
+        normalised = self._IMAGE_NAMESPACE_SANITIZER.sub("_", cleaned)
+        normalised = normalised.strip("_") or "default"
+        return normalised
+
+    def _sanitise_image_filename(self, filename: str | None, image_id: str) -> str:
+        """Return a safe filename for storing image binaries."""
+
+        if not filename:
+            return f"{image_id}.bin"
+
+        name = Path(filename).name
+        stem = self._IMAGE_FILENAME_SANITIZER.sub("_", Path(name).stem) or image_id
+        suffix = Path(name).suffix
+        clean_suffix = self._IMAGE_FILENAME_SANITIZER.sub("", suffix)
+        if not clean_suffix and suffix:
+            clean_suffix = suffix
+        return f"{stem}{clean_suffix}" if clean_suffix else stem
+
+    def _decode_image_data(self, asset: MemoryImageAsset) -> bytes | None:
+        """Decode base64 image data from an asset, returning raw bytes."""
+
+        if not asset.data:
+            return None
+        try:
+            return base64.b64decode(asset.data, validate=True)
+        except binascii.Error as exc:
+            raise MemoriaError(
+                f"Invalid base64 image payload for asset '{asset.filename or asset.image_id}'"
+            ) from exc
+
+    def _compute_image_dimensions(self, binary: bytes) -> tuple[int | None, int | None]:
+        """Attempt to derive image dimensions using Pillow when available."""
+
+        if not binary or Image is None:
+            return None, None
+
+        try:
+            with Image.open(io.BytesIO(binary)) as handle:  # type: ignore[arg-type]
+                return int(handle.width), int(handle.height)
+        except Exception:  # pragma: no cover - Pillow may not decode all formats
+            return None, None
+
+    def _persist_image_file(
+        self,
+        asset: MemoryImageAsset,
+        *,
+        namespace: str,
+        binary: bytes,
+    ) -> dict[str, Any]:
+        """Write binary image data to disk and return serialisable metadata."""
+
+        image_id = asset.image_id or uuid.uuid4().hex
+        filename = self._sanitise_image_filename(asset.filename, image_id)
+        namespace_folder = self._normalise_namespace_for_media(namespace)
+        bucket = self._image_storage_root / namespace_folder / image_id[:2] / image_id
+        bucket.mkdir(parents=True, exist_ok=True)
+
+        if not Path(filename).suffix:
+            guessed_ext = None
+            if asset.mime_type:
+                guessed_ext = mimetypes.guess_extension(asset.mime_type)
+            if guessed_ext:
+                filename = f"{filename}{guessed_ext}" if not filename.endswith(guessed_ext) else filename
+            else:
+                filename = f"{filename}.bin"
+
+        file_path = bucket / filename
+        with open(file_path, "wb") as handle:
+            handle.write(binary)
+
+        size_bytes = file_path.stat().st_size
+        width = asset.width
+        height = asset.height
+        if width is None or height is None:
+            computed_width, computed_height = self._compute_image_dimensions(binary)
+            width = width or computed_width
+            height = height or computed_height
+
+        mime_type = asset.mime_type
+        if not mime_type:
+            mime_type = mimetypes.guess_type(filename)[0]
+
+        created_at = datetime.utcnow().replace(tzinfo=timezone.utc)
+
+        metadata: dict[str, Any] = {
+            "image_id": image_id,
+            "filename": filename,
+            "mime_type": mime_type,
+            "size_bytes": size_bytes,
+            "width": width,
+            "height": height,
+            "caption": asset.caption,
+            "description": asset.description,
+            "file_path": str(file_path.relative_to(self._image_storage_root)),
+            "created_at": created_at.isoformat(),
+            "metadata": copy.deepcopy(asset.metadata) if asset.metadata else None,
+            "url": asset.url,
+            "namespace": namespace_folder,
+        }
+
+        return metadata
+
+    def _store_image_assets(
+        self,
+        images: Sequence[MemoryImageAsset | Mapping[str, Any]] | None,
+        *,
+        namespace: str,
+    ) -> tuple[list[dict[str, Any]] | None, bool]:
+        """Persist provided image assets and return their serialisable metadata."""
+
+        if not images:
+            return None, False
+
+        stored: list[dict[str, Any]] = []
+        includes_image = False
+
+        for item in images:
+            try:
+                model = (
+                    item
+                    if isinstance(item, MemoryImageAsset)
+                    else model_validate(MemoryImageAsset, item)
+                )
+            except Exception as exc:
+                logger.warning(f"Skipping invalid image asset payload: {exc}")
+                continue
+
+            binary = self._decode_image_data(model)
+            if binary is None:
+                logger.debug(
+                    "Skipping image asset without binary data or stored reference: %s",
+                    model.filename or model.image_id,
+                )
+                continue
+
+            metadata = self._persist_image_file(
+                model,
+                namespace=namespace,
+                binary=binary,
+            )
+            stored.append(metadata)
+            includes_image = True
+
+        return (stored or None, includes_image)
+
+    def _normalise_image_payload(self, value: Any) -> list[dict[str, Any]] | None:
+        """Normalise stored image metadata into a JSON-serialisable list."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                value = json.loads(stripped)
+            except json.JSONDecodeError:
+                return None
+
+        items: Sequence[Any]
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            items = value
+        else:
+            items = [value]
+
+        images: list[dict[str, Any]] = []
+
+        for item in items:
+            if item in (None, "", {}):
+                continue
+            if isinstance(item, MemoryImageAsset):
+                payload = model_dump(item, mode="python")
+            elif isinstance(item, Mapping):
+                payload = dict(item)
+            else:
+                continue
+            payload.pop("data", None)
+            images.append(payload)
+
+        return images or None
+
+    def _prepare_image_assets(
+        self,
+        images: Sequence[MemoryImageAsset | Mapping[str, Any]] | None,
+        *,
+        namespace: str,
+    ) -> tuple[list[MemoryImageAsset] | None, list[dict[str, Any]] | None, bool]:
+        """Persist images and return both typed models and raw metadata."""
+
+        metadata_list, includes_image = self._store_image_assets(
+            images,
+            namespace=namespace,
+        )
+        if not metadata_list:
+            return None, None, includes_image
+
+        prepared: list[MemoryImageAsset] = []
+        for meta in metadata_list:
+            try:
+                prepared.append(model_validate(MemoryImageAsset, meta))
+            except Exception:
+                logger.debug("Failed to normalise stored image metadata: %s", meta)
+        if not prepared:
+            return None, metadata_list, includes_image
+        return prepared, metadata_list, includes_image
+
+    def prepare_image_assets(
+        self,
+        images: Sequence[MemoryImageAsset | Mapping[str, Any]] | None,
+        *,
+        namespace: str,
+    ) -> tuple[list[MemoryImageAsset] | None, list[dict[str, Any]] | None, bool]:
+        """Public wrapper exposing image asset preparation for external callers."""
+
+        return self._prepare_image_assets(images, namespace=namespace)
 
     @property
     def team_id(self) -> str | None:
@@ -1577,6 +1838,14 @@ class StorageService:
             documents = self._normalise_documents_payload(processed.get("documents"))
         if documents:
             snapshot["documents"] = documents
+        images = self._normalise_image_payload(getattr(record, "image_assets_json", None))
+        if not images and isinstance(processed, Mapping):
+            images = self._normalise_image_payload(processed.get("images"))
+        if images:
+            snapshot["images"] = images
+        snapshot["includes_image"] = bool(
+            getattr(record, "includes_image", False) or (images is not None and len(images) > 0)
+        )
         return snapshot
 
     def get_memory_snapshot(
@@ -3306,6 +3575,18 @@ class StorageService:
             documents=model.documents,
         )
 
+        stored_images: list[MemoryImageAsset] | None
+        images_payload: list[dict[str, Any]] | None
+        includes_image: bool
+        stored_images, images_payload, includes_image = self._prepare_image_assets(
+            model.images,
+            namespace=resolved_namespace,
+        )
+        if stored_images is not None:
+            processed_memory.images = stored_images
+        if includes_image:
+            processed_memory.includes_image = True
+
         proposed_memory_id = str(uuid.uuid4())
         allowed = self._apply_retention_policy_on_write(
             namespace=resolved_namespace,
@@ -3364,6 +3645,9 @@ class StorageService:
         }
         if document_payload:
             changes["documents"] = document_payload
+        if images_payload:
+            changes["images"] = images_payload
+            changes["includes_image"] = True
 
         payload = self._build_memory_event_payload(
             memory_id=memory_id,
@@ -3405,6 +3689,7 @@ class StorageService:
         chat_id: str | None = None,
         workspace_id: str | None = None,
         user_id: str | None = None,
+        images: Sequence[MemoryImageAsset | Mapping[str, Any]] | None = None,
     ) -> str:
         """Directly store a memory into the database with spatial metadata."""
         symbolic_anchors = canonicalize_symbolic_anchors(symbolic_anchors)
@@ -3442,6 +3727,8 @@ class StorageService:
             "workspace_id": effective_workspace_id,
             "chat_id": resolved_chat_id,
         }
+        if images is not None:
+            ingestion_state["images"] = list(images)
         removed_fields: set[str] = set()
 
         def _apply_redaction(decision: PolicyDecision) -> None:
@@ -3486,6 +3773,7 @@ class StorageService:
             "workspace_id", effective_workspace_id
         )
         resolved_chat_id = ingestion_state.get("chat_id", resolved_chat_id)
+        images_input = ingestion_state.get("images", images)
 
         if decision.action is PolicyAction.REDACT:
             policy_payload["redacted"] = True
@@ -3505,6 +3793,10 @@ class StorageService:
             )
 
         try:
+            _stored_images, images_metadata, includes_image = self._prepare_image_assets(
+                images_input,
+                namespace=namespace,
+            )
             with self.db_manager.SessionLocal() as session:
                 if chat_id is None:
                     self.db_manager.store_chat_history(
@@ -3527,6 +3819,7 @@ class StorageService:
                         "text": text,
                         "tokens": tokens,
                         "emotional_intensity": emotional_intensity,
+                        "images": images_metadata,
                     },
                     importance_score=0.5,
                     category_primary="manual",
@@ -3542,6 +3835,8 @@ class StorageService:
                     y_coord=y_coord,
                     z_coord=z_coord,
                     symbolic_anchors=symbolic_anchors or [anchor],
+                    image_assets_json=images_metadata,
+                    includes_image=bool(includes_image),
                 )
                 session.add(memory)
                 session.commit()
@@ -4307,6 +4602,7 @@ class StorageService:
         importance_score: float = 0.5,
         metadata: dict[str, Any] | None = None,
         workspace_id: str | None = None,
+        images: Sequence[MemoryImageAsset | Mapping[str, Any]] | None = None,
     ) -> StagedManualMemory:
         """Stage a manual memory by writing it to short-term storage and spatial metadata."""
 
@@ -4460,6 +4756,25 @@ class StorageService:
             stage_metadata.setdefault("workspace_id", effective_workspace_id)
         stage_metadata.setdefault("namespace", resolved_namespace)
 
+        images_payload: list[dict[str, Any]] | None = None
+        if images is not None:
+            images_payload = []
+            for item in images:
+                if item in (None, "", {}):
+                    continue
+                if isinstance(item, MemoryImageAsset):
+                    images_payload.append(model_dump(item, mode="python"))
+                elif isinstance(item, Mapping):
+                    images_payload.append(dict(item))
+                else:
+                    try:
+                        normalised_image = model_validate(MemoryImageAsset, item)
+                    except Exception:
+                        continue
+                    images_payload.append(model_dump(normalised_image, mode="python"))
+            if not images_payload:
+                images_payload = None
+
         return StagedManualMemory(
             memory_id=short_term_id,
             chat_id=resolved_chat_id,
@@ -4473,6 +4788,7 @@ class StorageService:
             z_coord=z,
             symbolic_anchors=symbolic_anchors,
             metadata=stage_metadata,
+            images=images_payload,
         )
 
     def transfer_spatial_metadata(

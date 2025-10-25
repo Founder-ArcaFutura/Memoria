@@ -27,7 +27,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from ..config.manager import ConfigManager
-from ..schemas import PersonalMemoryDocument
+from ..schemas import MemoryImageAsset, PersonalMemoryDocument
 from ..utils.embeddings import generate_embedding, vector_search_enabled
 from ..utils.exceptions import DatabaseError
 from ..utils.pydantic_compat import model_dump, model_dump_json_safe, model_validate
@@ -1094,6 +1094,35 @@ class SQLAlchemyDatabaseManager:
             if not documents_payload:
                 documents_payload = None
 
+        image_assets_payload: list[dict[str, Any]] | None = None
+        includes_image = bool(getattr(memory, "includes_image", False))
+        if getattr(memory, "images", None):
+            image_assets_payload = []
+            for asset in memory.images or []:
+                if asset is None:
+                    continue
+                if isinstance(asset, MemoryImageAsset):
+                    serialised_image = model_dump(asset, mode="python")
+                else:
+                    try:
+                        normalised_image = model_validate(MemoryImageAsset, asset)
+                    except Exception:
+                        if isinstance(asset, Mapping):
+                            serialised_image = dict(asset)
+                        else:
+                            continue
+                    else:
+                        serialised_image = model_dump(normalised_image, mode="python")
+                serialised_image.pop("data", None)
+                created_at_value = serialised_image.get("created_at")
+                if isinstance(created_at_value, datetime):
+                    serialised_image["created_at"] = created_at_value.isoformat()
+                image_assets_payload.append(serialised_image)
+            if not image_assets_payload:
+                image_assets_payload = None
+            else:
+                includes_image = True
+
         with self.SessionLocal() as session:
             try:
                 long_term_memory = LongTermMemory(
@@ -1136,6 +1165,8 @@ class SQLAlchemyDatabaseManager:
                     processed_for_duplicates=False,
                     conscious_processed=False,
                     documents_json=documents_payload,
+                    image_assets_json=image_assets_payload,
+                    includes_image=includes_image,
                     last_edited_by_model=edited_by_model or "human",
                 )
 

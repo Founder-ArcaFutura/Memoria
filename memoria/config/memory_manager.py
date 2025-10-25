@@ -19,7 +19,7 @@ from ..utils.pydantic_models import AgentPermissions
 from .manager import ConfigManager
 
 if TYPE_CHECKING:
-    from ..schemas import PersonalMemoryDocument, PersonalMemoryEntry
+    from ..schemas import MemoryImageAsset, PersonalMemoryDocument, PersonalMemoryEntry
 
 # Interceptor system removed - using LiteLLM native callbacks only
 
@@ -396,6 +396,7 @@ class MemoryManager:
         chat_id: str | None = None,
         metadata: Mapping[str, Any] | None = None,
         documents: Sequence[Mapping[str, Any] | PersonalMemoryDocument] | None = None,
+        images: Sequence[Mapping[str, Any] | MemoryImageAsset] | None = None,
         namespace: str | None = None,
         team_id: str | None = None,
         workspace_id: str | None = None,
@@ -409,6 +410,7 @@ class MemoryManager:
         if self.memoria_instance is not None:
             metadata_payload = dict(metadata) if metadata is not None else None
             documents_payload = list(documents) if documents is not None else None
+            images_payload = list(images) if images is not None else None
             return self.memoria_instance.store_memory(
                 anchor,
                 text,
@@ -422,6 +424,7 @@ class MemoryManager:
                 chat_id=chat_id,
                 metadata=metadata_payload,
                 documents=documents_payload,
+                images=images_payload,
                 namespace=namespace,
                 team_id=team_id,
                 share_with_team=share_with_team,
@@ -456,6 +459,7 @@ class MemoryManager:
             symbolic_anchors=symbolic_anchors,
             emotional_intensity=emotional_intensity,
             chat_id=chat_id,
+            images=images,
         )
 
     def store_personal_memory(

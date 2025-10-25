@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, confloat, conint
 
-from memoria.schemas import PersonalMemoryDocument
+from memoria.schemas import MemoryImageAsset, PersonalMemoryDocument
 
 
 class AgentPermissions(BaseModel):
@@ -336,6 +336,14 @@ class ProcessedLongTermMemory(BaseModel):
     documents: list[PersonalMemoryDocument] | None = Field(
         default=None,
         description="Optional supporting documents linked to the memory",
+    )
+    images: list[MemoryImageAsset] | None = Field(
+        default=None,
+        description="Optional image assets persisted with the memory",
+    )
+    includes_image: bool = Field(
+        default=False,
+        description="Flag indicating that the memory contains image assets",
     )
 
     # Classification Reasoning
